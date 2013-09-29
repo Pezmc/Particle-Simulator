@@ -136,12 +136,12 @@ int emitterCount = 0;
 /**
  * Return a random double between 0 and 1
  */
-double randomBetween(int min, int max) {
-  int range = max - min;
+double randomBetween(double min, double max) {
+  double range = max - min;
   return (rand() / (double) RAND_MAX) * range + min;
 }
 
-double randomMax(int max) {
+double randomMax(double max) {
   return randomBetween(0,max);
 }
 
@@ -399,29 +399,41 @@ void calculateFPS() {
 /**
  * Calculate each particles position
  */
-void calculateParticle(Particle particle) {
+void calculateParticle(Particle *particle, SurfaceEmitter *emitter) {
 
   // If the particle has been killed
-  if(particle.dead) {
+  if(particle->dead) {
+
     // Respawn them here
-    if((particles[i].firstSpawn || particles[i].deadTime > 5) && randomNumber() < 0.01) {
+    if((particle->firstSpawn || particle->deadTime > 5)) { //&& randomNumber() < 0.01) {
+
       // @todo Spawn particle
-      /*particles[i].position.x = 0;
-          particles[i].position.y = 10;
-          particles[i].position.z = 0;
-          particles[i].velocity.x = randomNumber() * 2 - 1 + randomNumber() - 0.5;
-          particles[i].velocity.y = randomNumber() * 2 - 1 + randomNumber() - 0.5;
-          particles[i].velocity.z = randomNumber() * 2 - 1 + randomNumber() - 0.5;
-          particles[i].xCollision = 0;
-          particles[i].yCollision = 0;
-          particles[i].zCollision = 0;
-          particles[i].r = randomNumber();
-          particles[i].g = randomNumber();
-          particles[i].b = randomNumber();
-          particles[i].dead = 0;
-          particles[i].deadTime = 0;*/
+
+
+      particle->position.x = 0;
+      particle->position.y = 10;
+      particle->position.z = 0;
+
+
+      particle->velocity.x = emitter->spawnVelocity.x + randomBetween(-1,1);
+      particle->velocity.y = emitter->spawnVelocity.y + randomBetween(-1,1);
+      particle->velocity.z = emitter->spawnVelocity.z + randomBetween(-1,1);
+      particle->yCollision = 0;
+
+      particle->dead = 0;
+      particle->deadTime = 0;
+
+      // Color
+      if(emitter->r > 0) particle->r = emitter->r;
+      else particle->r = randomMax(0.5);
+
+      if(emitter->g > 0) particle->g = emitter->g;
+      else particle->g = randomMax(0.5);
+
+      if(emitter->b > 0) particle->b = emitter->b;
+      else particle->b = randomMax(0.5);
     } else {
-        particles[i].deadTime += deltaTime;
+      particle->deadTime += deltaTime;
     }
 
   }
@@ -429,42 +441,42 @@ void calculateParticle(Particle particle) {
   else {
 
     // Movement in X
-    particle.velocity.x *= 1 - (deltaTime * 0.01); // drag
-    particle.position.x = particle.position.x + particle.velocity.x * deltaTime;
+    particle->velocity.x *= 1 - (deltaTime * 0.01); // drag
+    particle->position.x = particle->position.x + particle->velocity.x * deltaTime;
 
     // Movement in Y (+ gravity)
-    particle.velocity.y *= 1 - (deltaTime * 0.01); // drag
-    particle.velocity.y = particle.velocity.y + gravityStrength * deltaTime / 2; // gravity #1
-    particle.position.y = particle.position.y + particle.velocity.y * deltaTime; // update position
-    particle.velocity.y = particle.velocity.y + gravityStrength * deltaTime / 2; // gravity #2
+    particle->velocity.y *= 1 - (deltaTime * 0.01); // drag
+    particle->velocity.y = particle->velocity.y + gravityStrength * deltaTime / 2; // gravity #1
+    particle->position.y = particle->position.y + particle->velocity.y * deltaTime; // update position
+    particle->velocity.y = particle->velocity.y + gravityStrength * deltaTime / 2; // gravity #2
 
     // Movement in Z
-    particle.velocity.z *= 1 - (deltaTime * 0.01); // drag
-    particle.position.z = particle.position.z + particle.velocity.z * deltaTime;
+    particle->velocity.z *= 1 - (deltaTime * 0.01); // drag
+    particle->position.z = particle->position.z + particle->velocity.z * deltaTime;
 
     // If we have hit (or are beneath) the floor
-    if (!particle.yCollision && particle.position.y <= 0) {
-      particle.velocity.y *= -0.6 - randomBetween(0, 0.15); // bounce (lose velocity) and go the other way
-      particle.yCollision = 1;
+    if (!particle->yCollision && particle->position.y <= 0) {
+      particle->velocity.y *= -0.6 - randomBetween(0, 0.15); // bounce (lose velocity) and go the other way
+      particle->yCollision = 1;
 
       // The floor is a bit bumpy, occasionally add other forces
       if (randomNumber() < 0.25)
-        particle.velocity.x += randomBetween(-0.5,0.5);
+        particle->velocity.x += randomBetween(-0.5,0.5);
       if (randomNumber() < 0.25)
-        particle.velocity.z += randomNumber() - 0.5;
+        particle->velocity.z += randomNumber() - 0.5;
 
     }
     // If we're clear of the floor
-    else if (particle.position.y > 0) {
-      particle.yCollision = 0;
+    else if (particle->position.y > 0) {
+      particle->yCollision = 0;
 
     }
     // Particle below floor and currently colliding
     else {
 
       // Delete the particle it's going nowhere
-      if (particle.position.y <= 0.01 && particle.velocity.y <= 0.01) {
-        particle.dead = 1;
+      if (particle->position.y <= 0.01 && particle->velocity.y <= 0.01) {
+        particle->dead = 1;
       }
 
     }
@@ -475,10 +487,10 @@ void calculateParticle(Particle particle) {
 /**
  * Calculate updates on an emitters particles
  */
-void calculateParticles(SurfaceEmitter emitter) {
+void calculateParticles(SurfaceEmitter *emitter) {
   int i;
-  for (i = 0; i < emitter.numberOfParticles; i++) {
-    calculateParticle(emitter.particles[i]);
+  for (i = 0; i < emitter->numberOfParticles; i++) {
+    calculateParticle(&emitter->particles[i], emitter);
   }
 }
 
@@ -488,7 +500,7 @@ void calculateParticles(SurfaceEmitter emitter) {
 void calculateEmitters() {
   int i;
   for (i = 0; i < emitterCount; i++) {
-      calculateParticles(emitters[i]);
+      calculateParticles(&emitters[i]);
   }
 }
 
@@ -746,9 +758,9 @@ void createEmitters() {
 
   int i;
   for(i = 0; i < PARTICLES_PER_EMITTER_LIMIT; i++) {
-    emitters[0].particles[i].dead = 0;
+    emitters[0].particles[i].dead = 1;
     emitters[0].particles[i].deadTime = 0;
-    emitters[0].particles[i].firstSpawn = 0;
+    emitters[0].particles[i].firstSpawn = 1;
   }
   emitters[0].numberOfParticles = PARTICLES_PER_EMITTER_LIMIT;
 
