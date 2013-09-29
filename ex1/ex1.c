@@ -151,16 +151,21 @@ double randomNumber() {
 
 /////////////// Main Draw ///////////////////
 
-/* Draw all the particles on the screen */
-void drawParticles() {
-  // Draw each particle
-  int i;
+/* Draw an individual particle */
+void drawParticle(Particle particle) {
   glBegin(GL_POINTS);
-  /*for (i= 0; i < numParticles; i++)  {
-   glColor3f(particles[i].r, particles[i].g, particles[i].b); // color
-   glVertex3f(particles[i].position.x, particles[i].position.y, particles[i].position.z); // position
-   }*/
+    glColor3f(particle.r, particle.g, particle.b); // color
+    glVertex3f(particle.position.x, particle.position.y, particle.position.z); // position
   glEnd();
+}
+
+/* Draw all the particles on the screen */
+void drawParticles(SurfaceEmitter emitter) {
+  // Draw each particle for the emitter
+  int i;
+  for (i = 0; i < emitter.numberOfParticles; i++) {
+    drawParticle(emitter.particles[i]);
+  }
 }
 
 /* Draw all the emitters on the screen */
@@ -174,6 +179,8 @@ void drawEmitters() {
        glVertex3f(emitters[i].bottomLeft.x, emitters[i].bottomLeft.y, emitters[i].bottomLeft.z);
        glVertex3f(emitters[i].bottomLeft.x, emitters[i].topRight.y,   emitters[i].topRight.z);
      glEnd();
+
+     drawParticles(emitters[i]);
   }
 }
 
@@ -333,12 +340,6 @@ void display() {
   if (axisEnabled)
     glCallList(axisList);
 
-  // Draw the emitter
-  /*glPushMatrix();
-  glTranslatef(0, 10, 0);
-  drawCube(2);
-  glPopMatrix();*/
-
   // Make the particles larger
   glPointSize(10);
 
@@ -402,6 +403,26 @@ void calculateParticle(Particle particle) {
 
   // If the particle has been killed
   if(particle.dead) {
+    // Respawn them here
+    if((particles[i].firstSpawn || particles[i].deadTime > 5) && randomNumber() < 0.01) {
+      // @todo Spawn particle
+      /*particles[i].position.x = 0;
+          particles[i].position.y = 10;
+          particles[i].position.z = 0;
+          particles[i].velocity.x = randomNumber() * 2 - 1 + randomNumber() - 0.5;
+          particles[i].velocity.y = randomNumber() * 2 - 1 + randomNumber() - 0.5;
+          particles[i].velocity.z = randomNumber() * 2 - 1 + randomNumber() - 0.5;
+          particles[i].xCollision = 0;
+          particles[i].yCollision = 0;
+          particles[i].zCollision = 0;
+          particles[i].r = randomNumber();
+          particles[i].g = randomNumber();
+          particles[i].b = randomNumber();
+          particles[i].dead = 0;
+          particles[i].deadTime = 0;*/
+    } else {
+        particles[i].deadTime += deltaTime;
+    }
 
   }
   // Particle is alive
@@ -445,35 +466,10 @@ void calculateParticle(Particle particle) {
       if (particle.position.y <= 0.01 && particle.velocity.y <= 0.01) {
         particle.dead = 1;
       }
-      else {
-
-        // Chance to respawn particles that are "dead"
-        if ((particle.firstSpawn || particle.deadTime > 5) && randomNumber() < 0.01) {
-          // @todo Spawn particle
-        } else {
-          particle.deadTime += deltaTime;
-        }
-
-      }
 
     }
 
   } // particle alive
-
-      /*particle.position.x = 0;
-      particle.position.y = 10;
-      particle.position.z = 0;
-      particle.velocity.x = randomNumber() * 2 - 1 + randomNumber() - 0.5;
-      particle.velocity.y = randomNumber() * 2 - 1 + randomNumber() - 0.5;
-      particle.velocity.z = randomNumber() * 2 - 1 + randomNumber() - 0.5;
-      particle.xCollision = 0;
-      particle.yCollision = 0;
-      particle.zCollision = 0;
-      particle.r = randomNumber();
-      particle.g = randomNumber();
-      particle.b = randomNumber();
-      particle.dead = 0;
-      particle.deadTime = 0;*/
 }
 
 /**
