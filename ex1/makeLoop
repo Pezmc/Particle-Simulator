@@ -1,0 +1,6 @@
+#/bin/bash
+while true
+do
+gcc -o ex1 ex1.c -framework OPENGL -framework GLUT
+./ex1
+done
