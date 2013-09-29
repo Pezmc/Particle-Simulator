@@ -15,10 +15,10 @@
 #include <math.h>
 
 #ifdef __APPLE__
-    #include <glut.h> //GLUT/glut.h
-    #include <OpenGL.h> //OpenGL/OpenGL.h
+  #include <glut.h> //GLUT/glut.h
+  #include <OpenGL.h> //OpenGL/OpenGL.h
 #else
-    #include <GL/glut.h>
+  #include <GL/glut.h>
 #endif
 
 ////////////// Define ///////////////
@@ -26,6 +26,12 @@
 /* Useful information */
 #define PI 3.1415926535897932384626433832795028841971
 #define DEG_TO_RAD PI/180
+
+/* How large is our emmitter array */
+#define EMITTER_LIMIT 6
+
+/* Particles/emiter limit */
+#define PARTICLES_PER_EMITTER_LIMIT 1000
 
 /* Define Some Keys */
 #define UP 0
@@ -63,23 +69,22 @@ typedef struct {
   // Spawned yet?
   int firstSpawn;
 
- } Particle;
+} Particle;
 
- /* particle struct */
+/* particle struct */
 
- typedef struct {
-	Vector bottomLeft;
-	Vector topRight;
+typedef struct {
+  Vector bottomLeft;
+  Vector topRight;
 
-	GLfloat r, g, b; // color
+  GLfloat r, g, b; // color
 
-	Vector spawnVelocity;
+  Vector spawnVelocity;
 
-	Particle particles[1000];
+  Particle particles[PARTICLES_PER_EMITTER_LIMIT];
 
-	int numberOfParticles;
+  int numberOfParticles;
 } SurfaceEmitter;
-
 
 //////////// Globals //////////////
 
@@ -89,6 +94,10 @@ float cameraLoopYAngle = 45;
 
 /* Have we received keyboard input yet? */
 int rotationKeyboardInputReceived = 0;
+
+/* Window size */
+int WINDOW_WIDTH = 800;
+int WINDOW_HEIGHT = 600;
 
 /* Axis */
 GLuint axisList;
@@ -119,16 +128,16 @@ float deltaTime = 0.01;
 float gravityStrength = GRAVITY_STRENGTH;
 
 /* Our array of emitters */
-SurfaceEmitter particles[1000];
+SurfaceEmitter emitters[6];
+int emitterCount = 0;
 
 ///////////////// Helpers ////////////////////
 
 /**
  * Return a random double between 0 and 1
  */
-double randomNumber()
-{
-  return (rand()/(double)RAND_MAX);
+double randomNumber() {
+  return (rand() / (double) RAND_MAX);
 }
 
 /**
@@ -138,37 +147,35 @@ double randomNumber()
  * - deltaTime
  * - currentTime
  */
-void calculateFPS()
-{
-	//  Increase frame count
-	frameCount++;
+void calculateFPS() {
+  //  Increase frame count
+  frameCount++;
 
-	//  Get the number of milliseconds since glutInit called
-	//  (or first call to glutGet(GLUT ELAPSED TIME)).
-	currentTime = glutGet(GLUT_ELAPSED_TIME);
+  //  Get the number of milliseconds since glutInit called
+  //  (or first call to glutGet(GLUT ELAPSED TIME)).
+  currentTime = glutGet(GLUT_ELAPSED_TIME);
 
-	//  Calculate time passed
-	float timeInterval = currentTime - lastFPSUpdateTime;
+  //  Calculate time passed
+  float timeInterval = currentTime - lastFPSUpdateTime;
 
-	if(timeInterval > 1000)
-	{
-		//  calculate the number of frames per second
-		fps = frameCount / (timeInterval / 1000.0f);
+  if (timeInterval > 1000) {
+    //  calculate the number of frames per second
+    fps = frameCount / (timeInterval / 1000.0f);
 
-		//  Set time
-		lastFPSUpdateTime = currentTime;
+    //  Set time
+    lastFPSUpdateTime = currentTime;
 
-		//  Reset frame count
-		frameCount = 0;
-	}
+    //  Reset frame count
+    frameCount = 0;
+  }
 
-    // Calculate time passed since last frame
-    float timeSinceLastFrameMS = currentTime - lastFrameTime;
+  // Calculate time passed since last frame
+  float timeSinceLastFrameMS = currentTime - lastFrameTime;
 
-    // Delta time is used for physica
-    deltaTime = timeSinceLastFrameMS / ( 1000.0f );
+  // Delta time is used for physica
+  deltaTime = timeSinceLastFrameMS / (1000.0f);
 
-    lastFrameTime = currentTime;
+  lastFrameTime = currentTime;
 }
 
 /////////////// Main Draw ///////////////////
@@ -178,10 +185,10 @@ void drawParticles() {
   // Draw each particle
   int i;
   glBegin(GL_POINTS);
-	  /*for (i= 0; i < numParticles; i++)  {
-		  glColor3f(particles[i].r, particles[i].g, particles[i].b); // color
-		  glVertex3f(particles[i].position.x, particles[i].position.y, particles[i].position.z); // position
-	  }*/
+  /*for (i= 0; i < numParticles; i++)  {
+   glColor3f(particles[i].r, particles[i].g, particles[i].b); // color
+   glVertex3f(particles[i].position.x, particles[i].position.y, particles[i].position.z); // position
+   }*/
   glEnd();
 }
 
@@ -195,37 +202,38 @@ void drawParticles() {
  * Abstracted: http://www.cs.manchester.ac.uk/ugt/COMP27112/OpenGL/frames.txt
  * Author: Toby Howard. toby@cs.man.ac.uk.
  */
-void drawString (void *font, float x, float y, char *str)
-{
+void drawString(void *font, float x, float y, char *str) {
   char *ch; //temp pointer to store current char
   GLint matrixMode; //what mode are we in
   GLboolean lightingOn; //is lighting on?
 
   lightingOn = glIsEnabled(GL_LIGHTING); /* lighting on? */
-  if (lightingOn) glDisable(GL_LIGHTING);
+  if (lightingOn)
+    glDisable(GL_LIGHTING);
 
   //Borrowed from Toby's code
   glGetIntegerv(GL_MATRIX_MODE, &matrixMode); /* matrix mode atm? */
 
   glMatrixMode(GL_PROJECTION); //Projection mode
   glPushMatrix(); //New matrix
-   glLoadIdentity();
-   gluOrtho2D(0.0, 1.0, 0.0, 1.0);
-   glMatrixMode(GL_MODELVIEW);
-   glPushMatrix(); //Again
-     glLoadIdentity();
-     glPushAttrib(GL_COLOR_BUFFER_BIT);       /* save current colour */
-       glColor3f(0.0, 0.0, 0.0); //set to black
-       glRasterPos3f(x, y, 0.0); //where to draw?
-       for(ch= str; *ch; ch++) { //for all chars...
-          glutBitmapCharacter(font, (int)*ch);
-       }
-     glPopAttrib();
-   glPopMatrix();
-   glMatrixMode(GL_PROJECTION);
+  glLoadIdentity();
+  gluOrtho2D(0.0, 1.0, 0.0, 1.0);
+  glMatrixMode(GL_MODELVIEW);
+  glPushMatrix(); //Again
+  glLoadIdentity();
+  glPushAttrib(GL_COLOR_BUFFER_BIT); /* save current colour */
+  glColor3f(0.0, 0.0, 0.0); //set to black
+  glRasterPos3f(x, y, 0.0); //where to draw?
+  for (ch = str; *ch; ch++) { //for all chars...
+    glutBitmapCharacter(font, (int) *ch);
+  }
+  glPopAttrib();
+  glPopMatrix();
+  glMatrixMode(GL_PROJECTION);
   glPopMatrix();
   glMatrixMode(matrixMode);
-  if (lightingOn) glEnable(GL_LIGHTING);
+  if (lightingOn)
+    glEnable(GL_LIGHTING);
 }
 
 /**
@@ -234,83 +242,83 @@ void drawString (void *font, float x, float y, char *str)
  * @param size How large the cube should be in OpenGL units
  */
 void drawCube(int size) {
-	// Half the requested size
-	size /= 2;
+  // Half the requested size
+  size /= 2;
 
-	// White side - BACK
-	glBegin(GL_POLYGON);
-	glColor3f(   1.0,  1.0, 1.0 );
-	glVertex3f(  size, -size, size );
-	glVertex3f(  size,  size, size );
-	glVertex3f( -size,  size, size );
-	glVertex3f( -size, -size, size );
-	glEnd();
+  // White side - BACK
+  glBegin(GL_POLYGON);
+  glColor3f(1.0, 1.0, 1.0);
+  glVertex3f(size, -size, size);
+  glVertex3f(size, size, size);
+  glVertex3f(-size, size, size);
+  glVertex3f(-size, -size, size);
+  glEnd();
 
-	// Purple side - RIGHT
-	glBegin(GL_POLYGON);
-	glColor3f(  1.0,  0.0,  1.0 );
-	glVertex3f( size, -size, -size );
-	glVertex3f( size,  size, -size );
-	glVertex3f( size,  size,  size );
-	glVertex3f( size, -size,  size );
-	glEnd();
+  // Purple side - RIGHT
+  glBegin(GL_POLYGON);
+  glColor3f(1.0, 0.0, 1.0);
+  glVertex3f(size, -size, -size);
+  glVertex3f(size, size, -size);
+  glVertex3f(size, size, size);
+  glVertex3f(size, -size, size);
+  glEnd();
 
-	// Green side - LEFT
-	glBegin(GL_POLYGON);
-	glColor3f(   0.0,  1.0,  0.0 );
-	glVertex3f( -size, -size,  size );
-	glVertex3f( -size,  size,  size );
-	glVertex3f( -size,  size, -size );
-	glVertex3f( -size, -size, -size );
-	glEnd();
+  // Green side - LEFT
+  glBegin(GL_POLYGON);
+  glColor3f(0.0, 1.0, 0.0);
+  glVertex3f(-size, -size, size);
+  glVertex3f(-size, size, size);
+  glVertex3f(-size, size, -size);
+  glVertex3f(-size, -size, -size);
+  glEnd();
 
-	// Blue side - TOP
-	glBegin(GL_POLYGON);
-	glColor3f(   0.0,  0.0,  1.0 );
-	glVertex3f(  size,  size,  size );
-	glVertex3f(  size,  size, -size );
-	glVertex3f( -size,  size, -size );
-	glVertex3f( -size,  size,  size );
-	glEnd();
+  // Blue side - TOP
+  glBegin(GL_POLYGON);
+  glColor3f(0.0, 0.0, 1.0);
+  glVertex3f(size, size, size);
+  glVertex3f(size, size, -size);
+  glVertex3f(-size, size, -size);
+  glVertex3f(-size, size, size);
+  glEnd();
 
-	// Red side - BOTTOM
-	glBegin(GL_POLYGON);
-	glColor3f(   1.0,  0.0,  0.0 );
-	glVertex3f(  size, -size, -size );
-	glVertex3f(  size, -size,  size );
-	glVertex3f( -size, -size,  size );
-	glVertex3f( -size, -size, -size );
-	glEnd();
+  // Red side - BOTTOM
+  glBegin(GL_POLYGON);
+  glColor3f(1.0, 0.0, 0.0);
+  glVertex3f(size, -size, -size);
+  glVertex3f(size, -size, size);
+  glVertex3f(-size, -size, size);
+  glVertex3f(-size, -size, -size);
+  glEnd();
 
-	// Black side - BACK
-	glBegin(GL_POLYGON);
-	glColor3f(   0.0,  0.0, 0.0 );
-	glVertex3f( -size,  size, -size );
-	glVertex3f( -size, -size, -size );
-	glVertex3f(  size, -size, -size );
-	glVertex3f(  size,  size, -size );
-	glEnd();
+  // Black side - BACK
+  glBegin(GL_POLYGON);
+  glColor3f(0.0, 0.0, 0.0);
+  glVertex3f(-size, size, -size);
+  glVertex3f(-size, -size, -size);
+  glVertex3f(size, -size, -size);
+  glVertex3f(size, size, -size);
+  glEnd();
 }
 
 /**
  * Draw the current FPS on the screen
  */
 void drawFPS() {
-	glLoadIdentity();
+  glLoadIdentity();
 
-	char str[80];
-    sprintf(str, "FPS: %4.2f", fps);
+  char str[80];
+  sprintf(str, "FPS: %4.2f", fps);
 
-	//  Print the FPS to the window
-	drawString(GLUT_BITMAP_HELVETICA_10, 0.9, 0.97, str);
+  //  Print the FPS to the window
+  drawString(GLUT_BITMAP_HELVETICA_10, 0.9, 0.97, str);
 }
 
 ////////////// Keyboard Handling ////////////////
 
 /* Standard key press */
-void keyboard(unsigned char key, int x, int y)
-{
-  if(key == 27) exit(0);
+void keyboard(unsigned char key, int x, int y) {
+  if (key == 27)
+    exit(0);
   glutPostRedisplay();
 }
 
@@ -318,12 +326,12 @@ void keyboard(unsigned char key, int x, int y)
 int keySpecialStates[246]; // Create an array of boolean values of length 246 (0-245)
 
 /* A special key has been pressed */
-void keySpecial (int key, int x, int y) {
+void keySpecial(int key, int x, int y) {
   keySpecialStates[key] = 1;
 }
 
 /* A special key has been released */
-void keySpecialUp (int key, int x, int y) {
+void keySpecialUp(int key, int x, int y) {
   keySpecialStates[key] = 0;
 }
 
@@ -331,10 +339,10 @@ void keySpecialUp (int key, int x, int y) {
  * Should be called every display loop
  * Uses the function cursor_keys for every pressed key
  */
-void keySpecialOperations (void) {
+void keySpecialOperations(void) {
   int i;
-  for(i = 0; i < 246; i++) {
-    if(keySpecialStates[i]) {
+  for (i = 0; i < 246; i++) {
+    if (keySpecialStates[i]) {
       specialKeys(i, 0, 0);
     }
   }
@@ -350,16 +358,16 @@ void specialKeys(int key, int x, int y) {
   switch (key) {
     case GLUT_KEY_LEFT:
       spin(LEFT);
-    break;
+      break;
     case GLUT_KEY_RIGHT:
       spin(RIGHT);
-    break;
+      break;
     case GLUT_KEY_UP:
       spin(UP);
-    break;
+      break;
     case GLUT_KEY_DOWN:
       spin(DOWN);
-    break;
+      break;
   }
 } // cursor_keys()
 
@@ -369,214 +377,229 @@ void specialKeys(int key, int x, int y) {
  * Position the camera and rotate the model
  */
 void positionCamera() {
-	gluLookAt(20.0, 10.0 + cameraLoopYPosition, 0.0, //eyeX, eyeY, eyeZ
-			0.0, 5.0, 0.0, //centerX, centerY, centerZ
-			0.0, 1.0, 0.0); //upX, upY, upZ
+  gluLookAt(20.0, 10.0 + cameraLoopYPosition, 0.0, //eyeX, eyeY, eyeZ
+      0.0, 5.0, 0.0, //centerX, centerY, centerZ
+      0.0, 1.0, 0.0); //upX, upY, upZ
 
-	// Rotate the scene
-    glRotatef(cameraLoopYAngle, 0.f, 1.f, 0.f); /* orbit the Y axis */
+  // Rotate the scene
+  glRotatef(cameraLoopYAngle, 0.f, 1.f, 0.f); /* orbit the Y axis */
 
-	//glRotatef(cos(DEG_TO_RAD*cameraLoopYAngle) * cameraLoopXAngle, 0.f, 0.f, 1.f); /* orbit the Z axis */
-    //glRotatef(sin(DEG_TO_RAD*cameraLoopYAngle) * cameraLoopXAngle, 1.f, 0.f, 0.f); /* orbit the X axis */
+  //glRotatef(cos(DEG_TO_RAD*cameraLoopYAngle) * cameraLoopXAngle, 0.f, 0.f, 1.f); /* orbit the Z axis */
+  //glRotatef(sin(DEG_TO_RAD*cameraLoopYAngle) * cameraLoopXAngle, 1.f, 0.f, 0.f); /* orbit the X axis */
 }
 
 /**
  * Main draw function
  */
-void display()
-{
-	// Clear the screen
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+void display() {
+  // Clear the screen
+  glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	// Reset the current matrix
-	glLoadIdentity();
+  // Reset the current matrix
+  glLoadIdentity();
 
-	// Set the camera position
-	positionCamera();
+  // Set the camera position
+  positionCamera();
 
-	// Draw the floor
-	glCallList(gridFloorList);
+  // Draw the floor
+  glCallList(gridFloorList);
 
-	// If enabled, draw coordinate axis
-	if(axisEnabled) glCallList(axisList);
+  // If enabled, draw coordinate axis
+  if (axisEnabled)
+    glCallList(axisList);
 
-	// Draw the emitter
-	glPushMatrix();
-		glTranslatef(0,10,0);
-	    drawCube(2);
-	glPopMatrix();
+  // Draw the emitter
+  glPushMatrix();
+  glTranslatef(0, 10, 0);
+  drawCube(2);
+  glPopMatrix();
 
+  // Make the particles larger
+  glPointSize(10);
 
-	// Make the particles larger
-	glPointSize(10);
+  // Draw every particle
+  drawParticles();
 
-	// Draw every particle
-	drawParticles();
+  // Draw an fps counter
+  drawFPS();
 
-	// Draw an fps counter
-	drawFPS();
+  // Empty buffers
+  glFlush();
 
-	// Empty buffers
-	glFlush();
-
-	// Swap buffer
-	glutSwapBuffers();
+  // Swap buffer
+  glutSwapBuffers();
 }
 
 /**
  * Called when OpenGL is idle
  */
-void idleTick (void)
-{
-    // Calculate FPS
-    calculateFPS();
+void idleTick(void) {
+  // Calculate FPS
+  calculateFPS();
 
-    // Press any (currently down) keys
-    keySpecialOperations();
+  // Press any (currently down) keys
+  keySpecialOperations();
 
-    // If we've received no user input, then rotate
-    if(!rotationKeyboardInputReceived) {
-    	cameraLoopYAngle += 10 * deltaTime;
+  // If we've received no user input, then rotate
+  if (!rotationKeyboardInputReceived) {
+    cameraLoopYAngle += 10 * deltaTime;
+  }
+
+  //Calculate position of each each particle
+  int i;
+  for (i = 0; i < numParticles; i++) {
+    //fprintf(stderr, "Delta time: %f\n", deltaTime);
+    //fprintf(stderr, "9.8*deltaTime/2: %f\n", 9.8*deltaTime/2);
+    //fprintf(stderr, "Old velocity: %f\n", particles[i].velocity.y);
+
+    if (!particles[i].dead) {
+      particles[i].velocity.x *= 1 - (deltaTime * 0.01); // drag
+      particles[i].position.x = particles[i].position.x
+          + particles[i].velocity.x * deltaTime;
+
+      particles[i].velocity.y *= 1 - (deltaTime * 0.01); //drag
+      particles[i].velocity.y = particles[i].velocity.y + gravityStrength
+          * deltaTime / 2;
+      particles[i].position.y = particles[i].position.y
+          + particles[i].velocity.y * deltaTime;
+      particles[i].velocity.y = particles[i].velocity.y + gravityStrength
+          * deltaTime / 2;
+
+      particles[i].velocity.z *= 1 - (deltaTime * 0.01); // drag
+      particles[i].position.z = particles[i].position.z
+          + particles[i].velocity.z * deltaTime;
+
+      // If we have hit (or are beneath) the floor
+      if (!particles[i].yCollision && particles[i].position.y <= 0) {
+        particles[i].velocity.y *= -0.6 - randomNumber() * 0.15; // bounce (lose velocity) and go the other way
+        particles[i].yCollision = 1;
+
+        // The floor is a bit bumpy, occasionally add other vectors
+        if (randomNumber() < 0.25)
+          particles[i].velocity.x += randomNumber() - 0.5;
+
+        if (randomNumber() < 0.25)
+          particles[i].velocity.z += randomNumber() - 0.5;
+
+      } else if (particles[i].position.y > 0) { // if we're clear
+        particles[i].yCollision = 0;
+      } else {
+        // Delete the particle it's going nowhere
+        if (particles[i].position.y <= 0.01 && particles[i].velocity.y <= 0.01) {
+          particles[i].dead = 1;
+        }
+      }
+
+      //fprintf(stderr, "New velocity: %f\n", particles[i].velocity.y);
     }
 
-    //Calculate position of each each particle
-    int i;
-    for (i= 0; i < numParticles; i++)  {
-		//fprintf(stderr, "Delta time: %f\n", deltaTime);
-		//fprintf(stderr, "9.8*deltaTime/2: %f\n", 9.8*deltaTime/2);
-		//fprintf(stderr, "Old velocity: %f\n", particles[i].velocity.y);
-
-		if(!particles[i].dead) {
-			particles[i].velocity.x *= 1 - (deltaTime * 0.01); // drag
-			particles[i].position.x = particles[i].position.x + particles[i].velocity.x*deltaTime;
-
-			particles[i].velocity.y *= 1 - (deltaTime * 0.01); //drag
-			particles[i].velocity.y = particles[i].velocity.y + gravityStrength*deltaTime/2;
-			particles[i].position.y = particles[i].position.y + particles[i].velocity.y*deltaTime;
-			particles[i].velocity.y = particles[i].velocity.y + gravityStrength*deltaTime/2;
-
-			particles[i].velocity.z *= 1 - (deltaTime * 0.01); // drag
-			particles[i].position.z = particles[i].position.z + particles[i].velocity.z*deltaTime;
-
-			// If we have hit (or are beneath) the floor
-			if(!particles[i].yCollision && particles[i].position.y <= 0) {
-				particles[i].velocity.y *= -0.6 - randomNumber() * 0.15; // bounce (lose velocity) and go the other way
-				particles[i].yCollision = 1;
-
-				// The floor is a bit bumpy, occasionally add other vectors
-				if(randomNumber() < 0.25)
-					particles[i].velocity.x += randomNumber() - 0.5;
-
-				if(randomNumber() < 0.25)
-					particles[i].velocity.z += randomNumber() - 0.5;
-
-			} else if(particles[i].position.y > 0) { // if we're clear
-				particles[i].yCollision = 0;
-			} else {
-				// Delete the particle it's going nowhere
-				if(particles[i].position.y <= 0.01 && particles[i].velocity.y <= 0.01) {
-					particles[i].dead = 1;
-				}
-			}
-
-			//fprintf(stderr, "New velocity: %f\n", particles[i].velocity.y);
-		}
-
-		// Chance to respawn items that are "dead" after one second
-		else {
-			if((particles[i].firstSpawn || particles[i].deadTime > 5) && randomNumber() < 0.01) {
-				  particles[i].position.x = 0;
-				  particles[i].position.y = 10;
-				  particles[i].position.z = 0;
-				  particles[i].velocity.x = randomNumber() * 2 - 1 + randomNumber() - 0.5;
-				  particles[i].velocity.y = randomNumber() * 2 - 1 + randomNumber() - 0.5;
-				  particles[i].velocity.z = randomNumber() * 2 - 1 + randomNumber() - 0.5;
-				  particles[i].xCollision = 0;
-				  particles[i].yCollision = 0;
-				  particles[i].zCollision = 0;
-				  particles[i].r = randomNumber();
-				  particles[i].g = randomNumber();
-				  particles[i].b = randomNumber();
-				  particles[i].dead = 0;
-				  particles[i].deadTime = 0;
-			} else {
-				particles[i].deadTime += deltaTime;
-			}
-		}
+    // Chance to respawn items that are "dead" after one second
+    else {
+      if ((particles[i].firstSpawn || particles[i].deadTime > 5)
+          && randomNumber() < 0.01) {
+        particles[i].position.x = 0;
+        particles[i].position.y = 10;
+        particles[i].position.z = 0;
+        particles[i].velocity.x = randomNumber() * 2 - 1 + randomNumber() - 0.5;
+        particles[i].velocity.y = randomNumber() * 2 - 1 + randomNumber() - 0.5;
+        particles[i].velocity.z = randomNumber() * 2 - 1 + randomNumber() - 0.5;
+        particles[i].xCollision = 0;
+        particles[i].yCollision = 0;
+        particles[i].zCollision = 0;
+        particles[i].r = randomNumber();
+        particles[i].g = randomNumber();
+        particles[i].b = randomNumber();
+        particles[i].dead = 0;
+        particles[i].deadTime = 0;
+      } else {
+        particles[i].deadTime += deltaTime;
+      }
     }
+  }
 
-
-    //  Call display function (draw the current frame)
-    glutPostRedisplay ();
+  //  Call display function (draw the current frame)
+  glutPostRedisplay();
 }
 
 ///////////////////////////////////////////////
 
-void reshape(int width, int height)
-{
-  //glClearColor(0.9, 0.9, 0.9, 1.0);
-  glViewport(0, 0, (GLsizei)width, (GLsizei)height);
+/**
+ * Handle window resize
+ */
+void reshape(int width, int height) {
+
+  WINDOW_WIDTH = glutGet(GLUT_SCREEN_WIDTH);
+  WINDOW_HEIGHT = glutGet(GLUT_SCREEN_HEIGHT);
+
+  glViewport(0, 0, (GLsizei) width, (GLsizei) height);
   glMatrixMode(GL_PROJECTION);
   glLoadIdentity();
-  gluPerspective(60, (GLfloat)width / (GLfloat)height, 1.0, 10000.0);
+  gluPerspective(60, (GLfloat) width / (GLfloat) height, 1.0, 10000.0);
   glMatrixMode(GL_MODELVIEW);
 }
 
-///////////////////////////////////////////////
+////////////// Make Display Lists/////////////////
 
+/**
+ * Create a display list for drawing coord axis
+ */
 void makeAxes() {
-// Create a display list for drawing coord axis
+
   axisList = glGenLists(1);
   glNewList(axisList, GL_COMPILE);
-      glLineWidth(2.0);
-      glBegin(GL_LINES);
-      glColor3f(1.0, 0.0, 0.0);       // X axis - red
-      glVertex3f(0.0, 0.0, 0.0);
-      glVertex3f(AXIS_SIZE, 0.0, 0.0);
-      glColor3f(0.0, 1.0, 0.0);       // Y axis - green
-      glVertex3f(0.0, 0.0, 0.0);
-      glVertex3f(0.0, AXIS_SIZE, 0.0);
-      glColor3f(0.0, 0.0, 1.0);       // Z axis - blue
-      glVertex3f(0.0, 0.0, 0.0);
-      glVertex3f(0.0, 0.0, AXIS_SIZE);
-    glEnd();
+  glLineWidth(2.0);
+  glBegin(GL_LINES);
+  glColor3f(1.0, 0.0, 0.0); // X axis - red
+  glVertex3f(0.0, 0.0, 0.0);
+  glVertex3f(AXIS_SIZE, 0.0, 0.0);
+  glColor3f(0.0, 1.0, 0.0); // Y axis - green
+  glVertex3f(0.0, 0.0, 0.0);
+  glVertex3f(0.0, AXIS_SIZE, 0.0);
+  glColor3f(0.0, 0.0, 1.0); // Z axis - blue
+  glVertex3f(0.0, 0.0, 0.0);
+  glVertex3f(0.0, 0.0, AXIS_SIZE);
+  glEnd();
   glEndList();
 }
 
+/**
+ * Create a display list for drawing the floor
+ * Tweaked from ex1 of COMP27112 by Toby Howard
+ */
 void makeGridFloor(int size, int yPos) {
-	 //Move the floor very slightly further down, so objects "on the floor" are slightly above it
-	yPos -= 0.002;
+  // Move the floor very slightly further down, so objects "on the floor" are slightly above it
+  yPos -= 0.002;
 
-	// Create a display list for the floor
-	gridFloorList = glGenLists(2);
-	glNewList(gridFloorList, GL_COMPILE);
-		// Draw a grey floor
-		// From ex1 of COMP27112
-		glDepthRange (0.1, 1.0);
-		glColor3f(0.4, 0.4, 0.4);
-		glBegin(GL_QUADS);
-			glVertex3f(-size, 0, size);
-			glVertex3f(size, 0, size);
-			glVertex3f(size, 0, -size);
-			glVertex3f(-size, 0, -size);
-		glEnd();
+  // Create a display list for the floor
+  gridFloorList = glGenLists(2);
+  glNewList(gridFloorList, GL_COMPILE);
 
-		// Draw grid lines on the floor
-		glDepthRange (0.0, 0.9);
-		glColor3f(0.2, 0.2, 0.2);
-		glLineWidth(1.0);
-		glBegin(GL_LINES);
-			int x, z;
-			for (x= -size; x <= size; x++)  {
-				glVertex3f((GLfloat) x, yPos+0.001, -size);
-				glVertex3f((GLfloat) x, yPos+0.001,  size);
-			}
-			for (z= -size; z <= size; z++)  {
-				glVertex3f(-size, yPos+0.001, (GLfloat) z);
-				glVertex3f( size, yPos+0.001, (GLfloat) z);
-			}
-		glEnd();
-	glEndList();
+  // Draw a grey floor
+  glDepthRange(0.1, 1.0);
+  glColor3f(0.4, 0.4, 0.4);
+  glBegin(GL_QUADS);
+  glVertex3f(-size, 0, size);
+  glVertex3f(size, 0, size);
+  glVertex3f(size, 0, -size);
+  glVertex3f(-size, 0, -size);
+  glEnd();
+
+  // Draw grid lines on the floor
+  glDepthRange(0.0, 0.9);
+  glColor3f(0.2, 0.2, 0.2);
+  glLineWidth(1.0);
+  glBegin(GL_LINES);
+  int x, z;
+  for (x = -size; x <= size; x++) {
+    glVertex3f((GLfloat) x, yPos + 0.001, -size);
+    glVertex3f((GLfloat) x, yPos + 0.001, size);
+  }
+  for (z = -size; z <= size; z++) {
+    glVertex3f(-size, yPos + 0.001, (GLfloat) z);
+    glVertex3f(size, yPos + 0.001, (GLfloat) z);
+  }
+  glEnd();
+  glEndList();
 }
 
 ///////////////////////////////////////////////
@@ -586,48 +609,53 @@ void makeGridFloor(int size, int yPos) {
  *  @param direction definedDirection (UP,LEFT,DOWN,RIGHT)
  */
 void spin(int direction) {
-	rotationKeyboardInputReceived = 1;
+  rotationKeyboardInputReceived = 1;
 
-  switch(direction) {
+  switch (direction) {
     case UP:
-    	cameraLoopYPosition += 10 * deltaTime;
-    break;
+      cameraLoopYPosition += 10 * deltaTime;
+      break;
     case DOWN:
-    	cameraLoopYPosition -= 10 * deltaTime;
-    break;
+      cameraLoopYPosition -= 10 * deltaTime;
+      break;
     case LEFT:
-    	cameraLoopYAngle += 60.0f * deltaTime;
-    break;
+      cameraLoopYAngle += 60.0f * deltaTime;
+      break;
     case RIGHT:
-    	cameraLoopYAngle -= 60.0f * deltaTime;
-    break;
+      cameraLoopYAngle -= 60.0f * deltaTime;
+      break;
   }
 
-  if(cameraLoopYPosition>50) cameraLoopYPosition = 50;
-  if(cameraLoopYPosition<-8) cameraLoopYPosition = -8;
-  if(cameraLoopYAngle>360) cameraLoopYAngle -= 360;
-  if(cameraLoopYAngle<0) cameraLoopYAngle += 360;
-
-  //fprintf(stderr, "Y: %f\n", cameraLoopYAngle);
-  //fprintf(stderr, "X: %f\n", cameraLoopXAngle);
+  if (cameraLoopYPosition > 50)
+    cameraLoopYPosition = 50;
+  if (cameraLoopYPosition < -8)
+    cameraLoopYPosition = -8;
+  if (cameraLoopYAngle > 360)
+    cameraLoopYAngle -= 360;
+  if (cameraLoopYAngle < 0)
+    cameraLoopYAngle += 360;
 }
 
 ///////////////////////////////////////////////
 
-void initGraphics(int argc, char *argv[])
-{
+void initGraphics(int argc, char *argv[]) {
   glutInit(&argc, argv);
-  glutInitWindowSize(800, 600);
-  glutInitWindowPosition(100, 100);
+
+  // Spawn a window
+  glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
+  glutInitWindowPosition((glutGet(GLUT_SCREEN_WIDTH) - WINDOW_WIDTH)/2,
+                         (glutGet(GLUT_SCREEN_HEIGHT) - WINDOW_HEIGHT)/2);
   glutInitDisplayMode(GLUT_DOUBLE | GLUT_DEPTH);
   glutCreateWindow("COMP37111 Particles");
+
+  // Connect my function
   glutDisplayFunc(display);
   glutIdleFunc(idleTick);
   glutKeyboardFunc(keyboard);
   glutReshapeFunc(reshape);
 
-  //Keyboard Functions, derived from:
-    //http://www.swiftless.com/tutorials/opengl/keyboard.html
+  // Keyboard Functions, derived from:
+  // http://www.swiftless.com/tutorials/opengl/keyboard.html
   glutSetKeyRepeat(GLUT_KEY_REPEAT_OFF);
   glutSpecialFunc(keySpecial); //key press
   glutSpecialUpFunc(keySpecialUp); //key up
@@ -641,6 +669,9 @@ void initGraphics(int argc, char *argv[])
   // Accept ift closer to the camera
   glDepthFunc(GL_LESS);
 
+  // Smooth points
+  glEnable(GL_POINT_SMOOTH);
+
   // Draw (and save on the GPU) the axes and floor
   makeAxes();
   makeGridFloor(FLOOR_SIZE, 0);
@@ -648,20 +679,11 @@ void initGraphics(int argc, char *argv[])
 
 /////////////////////////////////////////////////
 
-int main(int argc, char *argv[])
-{
-  double f;
+int main(int argc, char *argv[]) {
+  // Seed random
   srand(time(NULL));
 
-  int i;
-  for(i=0;i<1000;i++) {
-	  particles[i].dead = 1;
-	  particles[i].deadTime = 0;
-	  particles[i].firstSpawn = 1;
-  }
-  numParticles = 1000;
-
+  // Boot the graphics engine
   initGraphics(argc, argv);
-  glEnable(GL_POINT_SMOOTH);
   glutMainLoop();
 }
