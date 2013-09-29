@@ -1,6 +1,16 @@
 # Object files
 *.o
 
+Swap files
+*.swp
+
+# Make files
+make
+*.mk
+
+# Build folder
+Debug
+
 # Libraries
 *.lib
 *.a
