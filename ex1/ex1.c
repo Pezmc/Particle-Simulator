@@ -42,6 +42,9 @@
 /* Gravity default */
 #define GRAVITY_STRENGTH -9.8
 
+/* Bounce default */
+#define BOUNCE_COEFFICIENT 0.6
+
 ////////////// Structs //////////////
 
 /*
@@ -127,6 +130,9 @@ float deltaTime = 0.01;
 /* How strong is gravity at the moment */
 float gravityStrength = GRAVITY_STRENGTH;
 
+/* How bouncy is the floor? */
+float bounceCoefficient = BOUNCE_COEFFICIENT;
+
 /* Our array of emitters */
 SurfaceEmitter emitters[6];
 int emitterCount = 0;
@@ -173,14 +179,14 @@ void drawEmitters() {
   int i;
   for(i = 0; i < emitterCount; i++) {
     glBegin(GL_POLYGON);
-       glColor3f(emitters[i].r, emitters[i].g, emitters[i].b);
-       glVertex3f(emitters[i].topRight.x,   emitters[i].topRight.y,   emitters[i].topRight.z);
-       glVertex3f(emitters[i].topRight.x,   emitters[i].bottomLeft.y, emitters[i].bottomLeft.z);
-       glVertex3f(emitters[i].bottomLeft.x, emitters[i].bottomLeft.y, emitters[i].bottomLeft.z);
-       glVertex3f(emitters[i].bottomLeft.x, emitters[i].topRight.y,   emitters[i].topRight.z);
-     glEnd();
+      glColor3f(emitters[i].r, emitters[i].g, emitters[i].b);
+      glVertex3f(emitters[i].topRight.x,   emitters[i].topRight.y,   emitters[i].topRight.z);
+      glVertex3f(emitters[i].topRight.x,   emitters[i].bottomLeft.y, emitters[i].bottomLeft.z);
+      glVertex3f(emitters[i].bottomLeft.x, emitters[i].bottomLeft.y, emitters[i].bottomLeft.z);
+      glVertex3f(emitters[i].bottomLeft.x, emitters[i].topRight.y,   emitters[i].topRight.z);
+    glEnd();
 
-     drawParticles(emitters[i]);
+    drawParticles(emitters[i]);
   }
 }
 
@@ -300,7 +306,29 @@ void drawFPS() {
   sprintf(str, "FPS: %4.2f", fps);
 
   //  Print the FPS to the window
-  drawString(GLUT_BITMAP_HELVETICA_10, 0.9, 0.97, str);
+  drawString(GLUT_BITMAP_HELVETICA_10, 0.8, 0.97, str);
+}
+
+/**
+ * Draw the current gravity on the screen
+ */
+void drawGravity() {
+  char str[80];
+  sprintf(str, "Gravity Strength: %2.1f", gravityStrength * -1);
+
+  //  Print the FPS to the window
+  drawString(GLUT_BITMAP_HELVETICA_10, 0.8, 0.95, str);
+}
+
+/**
+ * Draw the current bounce on the screen
+ */
+void drawBounce() {
+  char str[80];
+  sprintf(str, "Bounce Strength: %2.2f", bounceCoefficient);
+
+  //  Print the FPS to the window
+  drawString(GLUT_BITMAP_HELVETICA_10, 0.8, 0.93, str);
 }
 
 ///////////////////////////////////////////////
@@ -339,6 +367,16 @@ void display() {
   // If enabled, draw coordinate axis
   if (axisEnabled)
     glCallList(axisList);
+
+  // Gravity prompt
+  if (gravityStrength + 0.1 < GRAVITY_STRENGTH || gravityStrength - 0.1 > GRAVITY_STRENGTH) {
+    drawGravity();
+  }
+
+  // Bounce
+  if (bounceCoefficient + 0.01 < BOUNCE_COEFFICIENT || bounceCoefficient - 0.01 > BOUNCE_COEFFICIENT) {
+    drawBounce();
+  }
 
   // Make the particles larger
   glPointSize(10);
@@ -405,33 +443,34 @@ void calculateParticle(Particle *particle, SurfaceEmitter *emitter) {
   if(particle->dead) {
 
     // Respawn them here
-    if((particle->firstSpawn || particle->deadTime > 5)) { //&& randomNumber() < 0.01) {
+    if((particle->firstSpawn || particle->deadTime > 5) && randomNumber() < 0.001) {
 
-      // @todo Spawn particle
+      // Spawn in a random xyz between top left and bottom right
+      particle->position.x = emitter->bottomLeft.x + (emitter->topRight.x - emitter->bottomLeft.x) * randomBetween(0.25,0.75);
+      particle->position.y = emitter->bottomLeft.y + (emitter->topRight.y - emitter->bottomLeft.y) * randomBetween(0.25,0.75);
+      particle->position.z = emitter->bottomLeft.z + (emitter->topRight.z - emitter->bottomLeft.z) * randomBetween(0.25,0.75);
 
-
-      particle->position.x = 0;
-      particle->position.y = 10;
-      particle->position.z = 0;
-
-
+      // Spawn the particle with the emitters velocity
       particle->velocity.x = emitter->spawnVelocity.x + randomBetween(-1,1);
       particle->velocity.y = emitter->spawnVelocity.y + randomBetween(-1,1);
       particle->velocity.z = emitter->spawnVelocity.z + randomBetween(-1,1);
+
+      // Colliding
       particle->yCollision = 0;
 
+      // Particle is "alive"
       particle->dead = 0;
       particle->deadTime = 0;
 
       // Color
-      if(emitter->r > 0) particle->r = emitter->r;
-      else particle->r = randomMax(0.5);
+      if(emitter->r > 0) particle->r = emitter->r + randomBetween(-0.1,0.1);
+      else particle->r = randomMax(0.75);
 
-      if(emitter->g > 0) particle->g = emitter->g;
-      else particle->g = randomMax(0.5);
+      if(emitter->g > 0) particle->g = emitter->g + randomBetween(-0.1,0.1);
+      else particle->g = randomMax(0.75);
 
-      if(emitter->b > 0) particle->b = emitter->b;
-      else particle->b = randomMax(0.5);
+      if(emitter->b > 0) particle->b = emitter->b + randomBetween(-0.1,0.1);
+      else particle->b = randomMax(0.75);
     } else {
       particle->deadTime += deltaTime;
     }
@@ -456,7 +495,7 @@ void calculateParticle(Particle *particle, SurfaceEmitter *emitter) {
 
     // If we have hit (or are beneath) the floor
     if (!particle->yCollision && particle->position.y <= 0) {
-      particle->velocity.y *= -0.6 - randomBetween(0, 0.15); // bounce (lose velocity) and go the other way
+      particle->velocity.y *= -bounceCoefficient - randomBetween(0, 0.15); // bounce (lose velocity) and go the other way
       particle->yCollision = 1;
 
       // The floor is a bit bumpy, occasionally add other forces
@@ -547,6 +586,18 @@ void specialKeys(int key, int x, int y) {
       break;
     case GLUT_KEY_DOWN:
       spin(DOWN);
+      break;
+    case GLUT_KEY_F1:
+      gravityStrength += 5 * deltaTime;
+      break;
+    case GLUT_KEY_F2:
+      gravityStrength -= 5 * deltaTime;
+      break;
+    case GLUT_KEY_F3:
+      bounceCoefficient -= 0.5 * deltaTime;
+      break;
+    case GLUT_KEY_F4:
+      bounceCoefficient += 0.5 * deltaTime;
       break;
   }
 } // cursor_keys()
@@ -741,30 +792,101 @@ void initGraphics(int argc, char *argv[]) {
 
 /////////////////////////////////////////////////
 
-void createEmitters() {
-
-  emitters[0].r = 1;
-  emitters[0].g = 0;
-  emitters[0].b = 0;
-  emitters[0].bottomLeft.x = -1;
-  emitters[0].bottomLeft.y = 10;
-  emitters[0].bottomLeft.z = -1;
-  emitters[0].topRight.x = 1;
-  emitters[0].topRight.y = 10;
-  emitters[0].topRight.z = 1;
-  emitters[0].spawnVelocity.x = 0;
-  emitters[0].spawnVelocity.y = -5;
-  emitters[0].spawnVelocity.z = 0;
+void createEmitter(int id) {
+  // Defaults
+  emitters[id].r = 0;
+  emitters[id].g = 0;
+  emitters[id].b = 0;
+  emitters[id].bottomLeft.x = 0;
+  emitters[id].bottomLeft.y = 10;
+  emitters[id].bottomLeft.z = 0;
+  emitters[id].topRight.x = 0;
+  emitters[id].topRight.y = 10;
+  emitters[id].topRight.z = 0;
+  emitters[id].spawnVelocity.x = 0;
+  emitters[id].spawnVelocity.y = 0;
+  emitters[id].spawnVelocity.z = 0;
 
   int i;
   for(i = 0; i < PARTICLES_PER_EMITTER_LIMIT; i++) {
-    emitters[0].particles[i].dead = 1;
-    emitters[0].particles[i].deadTime = 0;
-    emitters[0].particles[i].firstSpawn = 1;
+    emitters[id].particles[i].dead = 1;
+    emitters[id].particles[i].deadTime = 0;
+    emitters[id].particles[i].firstSpawn = 1;
   }
-  emitters[0].numberOfParticles = PARTICLES_PER_EMITTER_LIMIT;
+  emitters[id].numberOfParticles = PARTICLES_PER_EMITTER_LIMIT;
 
-  emitterCount = 1;
+  // Details for this ID
+  switch(id) {
+    case 0: // bottom
+      emitters[id].r = 1;
+      emitters[id].bottomLeft.x = -1;
+      emitters[id].bottomLeft.z = -1;
+      emitters[id].topRight.x = 1;
+      emitters[id].topRight.z = 1;
+      emitters[id].spawnVelocity.y = -5;
+    break;
+    case 1: // front
+      emitters[id].g = 1;
+      emitters[id].bottomLeft.x = -1;
+      emitters[id].bottomLeft.z = -1;
+      emitters[id].topRight.x = 1;
+      emitters[id].topRight.y = 12;
+      emitters[id].topRight.z = -1;
+      emitters[id].spawnVelocity.z = -5;
+    break;
+    case 2: //left
+      emitters[id].b = 1;
+      emitters[id].bottomLeft.x = -1;
+      emitters[id].bottomLeft.z = 1;
+      emitters[id].topRight.x = -1;
+      emitters[id].topRight.y = 12;
+      emitters[id].topRight.z = -1;
+      emitters[id].spawnVelocity.x = -5;
+    break;
+    case 3: // back
+      emitters[id].g = 1;
+      emitters[id].b = 1;
+      emitters[id].bottomLeft.x = 1;
+      emitters[id].bottomLeft.z = 1;
+      emitters[id].topRight.x = -1;
+      emitters[id].topRight.y = 12;
+      emitters[id].topRight.z = 1;
+      emitters[id].spawnVelocity.z = 5;
+    break;
+    case 4: // right
+      emitters[id].r = 0.75;
+      emitters[id].b = 0.75;
+      emitters[id].bottomLeft.x = 1;
+      emitters[id].bottomLeft.z = -1;
+      emitters[id].topRight.x = 1;
+      emitters[id].topRight.y = 12;
+      emitters[id].topRight.z = 1;
+      emitters[id].spawnVelocity.x = 5;
+    break;
+    case 5: // top
+      emitters[id].r = 1;
+      emitters[id].g = 1;
+      emitters[id].bottomLeft.x = -1;
+      emitters[id].bottomLeft.y = 12;
+      emitters[id].bottomLeft.z = -1;
+      emitters[id].topRight.x = 1;
+      emitters[id].topRight.y = 12;
+      emitters[id].topRight.z = 1;
+      emitters[id].numberOfParticles = 100;
+      emitters[id].spawnVelocity.y = 10;
+    break;
+  }
+
+}
+
+void createEmitters() {
+
+  int e;
+  emitterCount = 6;
+  for(e = 0; e < emitterCount; e++) {
+    createEmitter(e);
+  }
+  //emitterCount = 6;
 }
 
 /////////////////////////////////////////////////
