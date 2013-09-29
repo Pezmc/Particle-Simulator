@@ -21,6 +21,8 @@
     #include <GL/glut.h>
 #endif
 
+///////////////////////////////////////////////
+
 /* Useful information */
 #define PI 3.1415926535897932384626433832795028841971
 #define DEG_TO_RAD PI/180
@@ -31,11 +33,23 @@
 #define DOWN 2
 #define LEFT 3
 
+///////////////////////////////////////////////
+
 /* Rotate the scene around */
 float cameraLoopYPosition = 0;
 float cameraLoopYAngle = 45;
 
+/* Have we received keyboard input yet? */
 int rotationKeyboardInputReceived = 0;
+
+/* Axis */
+GLuint axisList;
+int AXIS_SIZE = 100;
+int axisEnabled = 1;
+
+/* Floor grid */
+int FLOOR_SIZE = 100;
+GLuint gridFloorList;
 
 ///////////////////////////////////////////////
 
@@ -81,12 +95,7 @@ typedef struct {
 
 ///////////////////////////////////////////////
 
-// Display list for coordinate axis 
-GLuint axisList;
-GLuint gridFloorList;
 
-int AXIS_SIZE= 200;
-int axisEnabled= 1;
 
 // Frame counting
 int frameCount = 0;
@@ -614,7 +623,7 @@ void initGraphics(int argc, char *argv[])
   glDepthFunc(GL_LESS);
 
   makeAxes();
-  makeGridFloor(100, 0);
+  makeGridFloor(FLOOR_SIZE, 0);
 }
 
 /////////////////////////////////////////////////
