@@ -39,36 +39,47 @@ int rotationKeyboardInputReceived = 0;
 
 ///////////////////////////////////////////////
 
+/*
+ * A 3d position (or vector)
+ */
 typedef struct {
-  GLfloat x, y, z;        /* colour */
- } Vector;
+  GLfloat x, y, z;
+} Vector;
 
-
-/* particle struct */
+/*
+ * A particle (or voxel) in 3d space
+ */
 typedef struct {
-  GLfloat r, g, b;        /* colour */
-  Vector position; 		  /* current position */
-  Vector velocity; 	 	  /* current velocity */
+  GLfloat r, g, b; // colour
+  Vector position; // current position
+  Vector velocity; //current velocity
 
-  int xCollision;
+  // Currently colliding with the floor?
   int yCollision;
-  int zCollision;
 
+  // "dead" = Not moving
   int dead;
   float deadTime;
 
+  // Spawned yet?
   int firstSpawn;
 
  } Particle;
 
  /* particle struct */
 
- /*typedef struct {
+ typedef struct {
 	Vector bottomLeft;
 	Vector topRight;
 
-	GLfloat r, g, b;        /* colour
-} SurfaceEmitter;*/
+	GLfloat r, g, b; // color
+
+	Vector spawnVelocity;
+
+	Particle particles[1000];
+} SurfaceEmitter;
+
+///////////////////////////////////////////////
 
 // Display list for coordinate axis 
 GLuint axisList;
