@@ -795,16 +795,16 @@ void spin(int direction) {
 ///////////////////////////////////////////////
 
 // Menu handling function definition
-void menu(int item)
+void selectMenuItem(int item)
 {
         switch (item)
         {
-        case MENU_CUBE_TOP:
+	case MENU_CUBE_TOP:
 	case MENU_CUBE_BOTTOM:
-        case MENU_CUBE_FRONT:
-        case MENU_CUBE_LEFT:
-        case MENU_CUBE_BACK:
-        case MENU_CUBE_RIGHT:
+	case MENU_CUBE_FRONT:
+	case MENU_CUBE_LEFT:
+	case MENU_CUBE_BACK:
+	case MENU_CUBE_RIGHT:
                 CURRENT_MENU_SHOW = (MENU_TYPE) item;
                 break;
         default:
@@ -852,11 +852,18 @@ void initGraphics(int argc, char *argv[]) {
   // Smooth points
   glEnable(GL_POINT_SMOOTH);
 
+
+  int cubeMenu = glutCreateMenu( selectMenuItem );
+  glutAddMenuEntry("Set Color", MENU_CUBE_TOP );
+  glutAddMenuEntry("Set Particles", MENU_CUBE_TOP );
+  glutAddMenuEntry("Set Velocity", MENU_CUBE_TOP );
+
   // Create a menu
-  glutCreateMenu(menu);
+  int mainMenu = glutCreateMenu( selectMenuItem );
 
   // Add menu items
-  glutAddMenuEntry("Top Face", MENU_CUBE_TOP);
+  glutAddSubMenu("Top Face", cubeMenu);
+  //glutAddMenuEntry("Top Face", MENU_CUBE_TOP);
   glutAddMenuEntry("Bottom Face", MENU_CUBE_BOTTOM);
   glutAddMenuEntry("Front Face", MENU_CUBE_FRONT);
   glutAddMenuEntry("Left Face", MENU_CUBE_LEFT);
