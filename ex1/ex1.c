@@ -180,10 +180,26 @@ void drawEmitters() {
   for(i = 0; i < emitterCount; i++) {
     glBegin(GL_POLYGON);
       glColor3f(emitters[i].r, emitters[i].g, emitters[i].b);
+
+      // Top right corner
       glVertex3f(emitters[i].topRight.x,   emitters[i].topRight.y,   emitters[i].topRight.z);
-      glVertex3f(emitters[i].topRight.x,   emitters[i].bottomLeft.y, emitters[i].bottomLeft.z);
+
+      // If Y is equal we are drawing the bottomRight (from above)
+      if(emitters[i].bottomLeft.y == emitters[i].topRight.y)
+        glVertex3f(emitters[i].topRight.x, emitters[i].topRight.y,   emitters[i].bottomLeft.z);
+      else
+        glVertex3f(emitters[i].topRight.x, emitters[i].bottomLeft.y, emitters[i].topRight.z);
+
+      // Bottom left corner
       glVertex3f(emitters[i].bottomLeft.x, emitters[i].bottomLeft.y, emitters[i].bottomLeft.z);
-      glVertex3f(emitters[i].bottomLeft.x, emitters[i].topRight.y,   emitters[i].topRight.z);
+
+      // If Y is equal we are drawing the topLeft (from above)
+      if(emitters[i].bottomLeft.y == emitters[i].topRight.y)
+        glVertex3f(emitters[i].bottomLeft.x, emitters[i].topRight.y,   emitters[i].topRight.z);
+      else
+        glVertex3f(emitters[i].bottomLeft.x, emitters[i].topRight.y,   emitters[i].bottomLeft.z);
+
+
     glEnd();
 
     drawParticles(emitters[i]);
@@ -837,9 +853,9 @@ void createEmitter(int id) {
     case 2: //left
       emitters[id].b = 1;
       emitters[id].bottomLeft.x = -1;
+      emitters[id].bottomLeft.y = 12;
       emitters[id].bottomLeft.z = 1;
       emitters[id].topRight.x = -1;
-      emitters[id].topRight.y = 12;
       emitters[id].topRight.z = -1;
       emitters[id].spawnVelocity.x = -5;
     break;
