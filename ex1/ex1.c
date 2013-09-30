@@ -14,9 +14,12 @@
 #include <time.h>
 #include <math.h>
 
-#ifdef __APPLE__
+#ifdef __ECLIPSE__
   #include <glut.h> //GLUT/glut.h
   #include <OpenGL.h> //OpenGL/OpenGL.h
+#elif defined(__APPLE__)
+  #include <GLUT/glut.h>
+  #include <OpenGL/OpenGL.h>
 #else
   #include <GL/glut.h>
 #endif
