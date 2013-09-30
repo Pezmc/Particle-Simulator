@@ -82,6 +82,8 @@ typedef struct {
 
   GLfloat r, g, b; // color
 
+  GLfloat yawAngle; // rotation around Y
+
   Vector spawnVelocity;
 
   Particle particles[PARTICLES_PER_EMITTER_LIMIT];
@@ -178,31 +180,36 @@ void drawParticles(SurfaceEmitter emitter) {
 void drawEmitters() {
   int i;
   for(i = 0; i < emitterCount; i++) {
-    glBegin(GL_POLYGON);
-      glColor3f(emitters[i].r, emitters[i].g, emitters[i].b);
 
-      // Top right corner
-      glVertex3f(emitters[i].topRight.x,   emitters[i].topRight.y,   emitters[i].topRight.z);
+    glPushMatrix();
+      // Rotation
+      //glRotatef(emitters[i].yawAngle, 0.f, 1.f, 0.f); /* rotate on the Y axis */
 
-      // If Y is equal we are drawing the bottomRight (from above)
-      if(emitters[i].bottomLeft.y == emitters[i].topRight.y)
-        glVertex3f(emitters[i].topRight.x, emitters[i].topRight.y,   emitters[i].bottomLeft.z);
-      else
-        glVertex3f(emitters[i].topRight.x, emitters[i].bottomLeft.y, emitters[i].topRight.z);
+      // Draw the emitter plane
+      glBegin(GL_POLYGON);
+        glColor3f(emitters[i].r, emitters[i].g, emitters[i].b);
+  
+        // Top right corner
+        glVertex3f(emitters[i].topRight.x,   emitters[i].topRight.y,   emitters[i].topRight.z);
+  
+        // If Y is equal we are drawing the bottomRight (from above)
+        if(emitters[i].bottomLeft.y == emitters[i].topRight.y)
+          glVertex3f(emitters[i].topRight.x, emitters[i].topRight.y,   emitters[i].bottomLeft.z);
+        else
+          glVertex3f(emitters[i].topRight.x, emitters[i].bottomLeft.y, emitters[i].topRight.z);
+  
+        // Bottom left corner
+        glVertex3f(emitters[i].bottomLeft.x, emitters[i].bottomLeft.y, emitters[i].bottomLeft.z);
+  
+        // If Y is equal we are drawing the topLeft (from above)
+        if(emitters[i].bottomLeft.y == emitters[i].topRight.y)
+          glVertex3f(emitters[i].bottomLeft.x, emitters[i].topRight.y,   emitters[i].topRight.z);
+        else
+          glVertex3f(emitters[i].bottomLeft.x, emitters[i].topRight.y,   emitters[i].bottomLeft.z);
+      glEnd();
 
-      // Bottom left corner
-      glVertex3f(emitters[i].bottomLeft.x, emitters[i].bottomLeft.y, emitters[i].bottomLeft.z);
-
-      // If Y is equal we are drawing the topLeft (from above)
-      if(emitters[i].bottomLeft.y == emitters[i].topRight.y)
-        glVertex3f(emitters[i].bottomLeft.x, emitters[i].topRight.y,   emitters[i].topRight.z);
-      else
-        glVertex3f(emitters[i].bottomLeft.x, emitters[i].topRight.y,   emitters[i].bottomLeft.z);
-
-
-    glEnd();
-
-    drawParticles(emitters[i]);
+      drawParticles(emitters[i]);
+    glPopMatrix();
   }
 }
 
@@ -556,6 +563,12 @@ void calculateEmitters() {
   int i;
   for (i = 0; i < emitterCount; i++) {
       calculateParticles(&emitters[i]);
+
+      // Rotate very slowly
+      //emitters[i].yawAngle += 30 * deltaTime;
+
+      //emitters[i].topRight.y += 0.01;
+      //emitters[i].bottomLeft.y += 0.01;
   }
 }
 
@@ -822,6 +835,7 @@ void createEmitter(int id) {
   emitters[id].spawnVelocity.x = 0;
   emitters[id].spawnVelocity.y = 0;
   emitters[id].spawnVelocity.z = 0;
+  emitters[id].yawAngle = 0;
 
   int i;
   for(i = 0; i < PARTICLES_PER_EMITTER_LIMIT; i++) {
