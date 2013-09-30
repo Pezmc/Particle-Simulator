@@ -18,8 +18,10 @@ testForError() {
 while true
 do
 	if [[ $OSTYPE == "linux-gnu" ]]; then
+		echo "Building for Linux"
 		testForError "cogl ex1.c"
 	else
+		echo "Building for OS X"
 		testForError "gcc -o ex1 ex1.c -framework OPENGL -framework GLUT"
 	fi
 	./ex1
