@@ -1,10 +1,26 @@
-#/bin/bash
+#!/bin/bash
+
+testForError() {
+  OUTPUT=$( { $1; } 2>&1 )
+
+  if [[ $OUTPUT =~ error|failed ]]
+  then
+    echo -e "$OUTPUT" | egrep --color -i "error|failed|\$"
+    echo
+    echo "There was an error, please see above"
+    read -p "Press [Enter] key to continue"
+  else
+    echo "No error"
+    echo
+  fi
+}
+
 while true
 do
-	if [ $ostype="linux-gnu" ]; then
-		cogl ex1.c
+	if [[ $OSTYPE == "linux-gnu" ]]; then
+		testForError "cogl ex1.c"
 	else
-		gcc -o ex1 ex1.c -framework OPENGL -framework GLUT
+		testForError "gcc -o ex1 ex1.c -framework OPENGL -framework GLUT"
 	fi
 	./ex1
 done
