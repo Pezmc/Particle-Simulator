@@ -45,6 +45,20 @@
 /* Bounce default */
 #define BOUNCE_COEFFICIENT 0.6
 
+/* Items in my menu */
+typedef enum
+{
+        MENU_CUBE_TOP,
+	MENU_CUBE_BOTTOM,
+        MENU_CUBE_FRONT,
+        MENU_CUBE_LEFT,
+        MENU_CUBE_BACK,
+        MENU_CUBE_RIGHT
+} MENU_TYPE;
+
+// Assign a default value
+MENU_TYPE CURRENT_MENU_SHOW = MENU_CUBE_TOP;
+
 ////////////// Structs //////////////
 
 /*
@@ -780,6 +794,30 @@ void spin(int direction) {
 
 ///////////////////////////////////////////////
 
+// Menu handling function definition
+void menu(int item)
+{
+        switch (item)
+        {
+        case MENU_CUBE_TOP:
+	case MENU_CUBE_BOTTOM:
+        case MENU_CUBE_FRONT:
+        case MENU_CUBE_LEFT:
+        case MENU_CUBE_BACK:
+        case MENU_CUBE_RIGHT:
+                CURRENT_MENU_SHOW = (MENU_TYPE) item;
+                break;
+        default:
+                break;
+        }
+
+        glutPostRedisplay();
+
+        return;
+}
+
+///////////////////////////////////////////////
+
 void initGraphics(int argc, char *argv[]) {
   glutInit(&argc, argv);
 
@@ -813,6 +851,20 @@ void initGraphics(int argc, char *argv[]) {
 
   // Smooth points
   glEnable(GL_POINT_SMOOTH);
+
+  // Create a menu
+  glutCreateMenu(menu);
+
+  // Add menu items
+  glutAddMenuEntry("Top Face", MENU_CUBE_TOP);
+  glutAddMenuEntry("Bottom Face", MENU_CUBE_BOTTOM);
+  glutAddMenuEntry("Front Face", MENU_CUBE_FRONT);
+  glutAddMenuEntry("Left Face", MENU_CUBE_LEFT);
+  glutAddMenuEntry("Back Face", MENU_CUBE_BACK);
+  glutAddMenuEntry("Right Face", MENU_CUBE_RIGHT);
+
+  // Associate a mouse button with menu
+  glutAttachMenu(GLUT_RIGHT_BUTTON);
 
   // Draw (and save on the GPU) the axes and floor
   makeAxes();
