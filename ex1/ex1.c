@@ -48,6 +48,10 @@
 /* Bounce default */
 #define BOUNCE_COEFFICIENT 0.6
 
+/* Bounding Box */
+#define FLOOR_HEIGHT 0
+#define CEILING_HEIGHT 100
+
 /* Items in my menu */
 typedef enum
 {
@@ -71,6 +75,17 @@ typedef struct {
   GLfloat x, y, z;
 } Vector;
 
+
+/*
+ * A linked list of positions
+ */
+struct PositionNode;
+typedef struct PositionNode {
+  Vector position;
+  struct PositionNode *next;
+
+} PositionNode;
+
 /*
  * A particle (or voxel) in 3d space
  */
@@ -88,6 +103,9 @@ typedef struct {
 
   // Spawned yet?
   int firstSpawn;
+
+  // Linked list of positions
+  PositionNode *previousPositions;
 
 } Particle;
 
@@ -127,8 +145,13 @@ int AXIS_SIZE = 100;
 int axisEnabled = 1;
 
 /* Floor grid */
-int FLOOR_SIZE = 100;
-GLuint gridFloorList;
+int WORLD_SIZE = 100;
+
+/* Floor ID */
+GLuint gridFloorListID;
+
+/* Ceiling position */
+GLuint ceilingListID;
 
 /* Frame counting */
 int frameCount = 0;
@@ -401,8 +424,11 @@ void display() {
   // Set the camera position
   positionCamera();
 
+  // Draw the ceiling
+  glCallList(ceilingListID);
+
   // Draw the floor
-  glCallList(gridFloorList);
+  glCallList(gridFloorListID);
 
   // If enabled, draw coordinate axis
   if (axisEnabled)
@@ -485,6 +511,17 @@ void calculateParticle(Particle *particle, SurfaceEmitter *emitter) {
     // Respawn them here
     if((particle->firstSpawn || particle->deadTime > 5) && randomNumber() < 0.001) {
 
+      // Store the particles previous position
+      /*PositionNode* newPositionsRoot = malloc(sizeof(struct PositionNode));
+      if (newPositionsRoot == 0) {
+        fprintf(stderr, "Out of memory" );
+        return;
+      }
+      newPositionsRoot->position.x = particle->position.x;
+      newPositionsRoot->position.y = particle->position.y;
+      newPositionsRoot->position.z = particle->position.z;
+      newPositionsRoot->next = particle->previousPositions; // old root*/
+
       // Spawn in a random xyz between top left and bottom right
       particle->position.x = emitter->bottomLeft.x + (emitter->topRight.x - emitter->bottomLeft.x) * randomBetween(0.25,0.75);
       particle->position.y = emitter->bottomLeft.y + (emitter->topRight.y - emitter->bottomLeft.y) * randomBetween(0.25,0.75);
@@ -533,8 +570,8 @@ void calculateParticle(Particle *particle, SurfaceEmitter *emitter) {
     particle->velocity.z *= 1 - (deltaTime * 0.01); // drag
     particle->position.z = particle->position.z + particle->velocity.z * deltaTime;
 
-    // If we have hit (or are beneath) the floor
-    if (!particle->yCollision && particle->position.y <= 0) {
+    // If we are below the floor, or above the "ceiling"
+    if (!particle->yCollision && (particle->position.y <= FLOOR_HEIGHT || particle->position.y >= CEILING_HEIGHT)) { // floor
       particle->velocity.y *= -bounceCoefficient - randomBetween(0, 0.15); // bounce (lose velocity) and go the other way
       particle->yCollision = 1;
 
@@ -542,19 +579,23 @@ void calculateParticle(Particle *particle, SurfaceEmitter *emitter) {
       if (randomNumber() < 0.25)
         particle->velocity.x += randomBetween(-0.5,0.5);
       if (randomNumber() < 0.25)
-        particle->velocity.z += randomNumber() - 0.5;
+        particle->velocity.z += randomBetween(-0.5,0.5);
 
     }
     // If we're clear of the floor
-    else if (particle->position.y > 0) {
+    else if (particle->position.y > FLOOR_HEIGHT && particle->position.y < CEILING_HEIGHT) {
       particle->yCollision = 0;
 
     }
-    // Particle below floor and currently colliding
+    // Particle below floor (or above ceiling) and currently colliding
     else {
 
-      // Delete the particle it's going nowhere
-      if (particle->position.y <= 0.01 && particle->velocity.y <= 0.01) {
+      // Delete the particle it's below the floor
+      if (particle->position.y <= FLOOR_HEIGHT + 0.01 && particle->velocity.y <= 0.01) {
+        particle->dead = 1;
+      }
+      // Delete the particle if it's above the ceiling
+      else if(particle->position.y >= CEILING_HEIGHT - 0.01 && particle->velocity.y >= -0.01) {
         particle->dead = 1;
       }
 
@@ -728,13 +769,53 @@ void makeAxes() {
  * Create a display list for drawing the floor
  * Tweaked from ex1 of COMP27112 by Toby Howard
  */
+/*void makeGridFloor(int size, int yPos) {
+  // Move the floor very slightly further down, so objects "on the floor" are slightly above it
+  yPos -= 0.001;
+
+  // Create a display list for the floor
+  gridFloorListID = glGenLists(2);
+  glNewList(gridFloorListID, GL_COMPILE);
+
+    // Draw a grey floor
+    glDepthRange(0.1, 1.0);
+    glColor3f(0.4, 0.4, 0.4);
+    glBegin(GL_QUADS);
+      glVertex3f(-size, yPos, size);
+      glVertex3f(size, yPos, size);
+      glVertex3f(size, yPos, -size);
+      glVertex3f(-size, yPos, -size);
+    glEnd();
+
+    // Draw grid lines on the floor
+    glDepthRange(0.0, 0.9);
+    glColor3f(0.2, 0.2, 0.2);
+    glLineWidth(1.0);
+    glBegin(GL_LINES);
+    int x, z;
+    for (x = -size; x <= size; x++) {
+      glVertex3f((GLfloat) x, yPos + 2, -size);
+      glVertex3f((GLfloat) x, yPos + 2, size);
+    }
+    for (z = -size; z <= size; z++) {
+      glVertex3f(-size, yPos + 2, (GLfloat) z);
+      glVertex3f(size, yPos + 2, (GLfloat) z);
+    }
+    glEnd();
+
+  glEndList();
+}*/
+/**
+ * Create a display list for drawing the floor
+ * Tweaked from ex1 of COMP27112 by Toby Howard
+ */
 void makeGridFloor(int size, int yPos) {
   // Move the floor very slightly further down, so objects "on the floor" are slightly above it
   yPos -= 0.002;
 
   // Create a display list for the floor
-  gridFloorList = glGenLists(2);
-  glNewList(gridFloorList, GL_COMPILE);
+  gridFloorListID = glGenLists(2);
+  glNewList(gridFloorListID, GL_COMPILE);
 
     // Draw a grey floor
     glDepthRange(0.1, 1.0);
@@ -760,6 +841,24 @@ void makeGridFloor(int size, int yPos) {
       glVertex3f(-size, yPos + 0.001, (GLfloat) z);
       glVertex3f(size, yPos + 0.001, (GLfloat) z);
     }
+    glEnd();
+
+  glEndList();
+}
+
+void makeCeiling(int size, int yPos) {
+  // Create a display list for the ceiling
+  ceilingListID = glGenLists(3);
+  glNewList(ceilingListID, GL_COMPILE);
+
+    // Draw a grey ceiling
+    glDepthRange(0.1, 1.0);
+    glColor3f(0.3, 0.3, 0.3);
+    glBegin(GL_QUADS);
+      glVertex3f(-size, yPos, size);
+      glVertex3f(size, yPos, size);
+      glVertex3f(size, yPos, -size);
+      glVertex3f(-size, yPos, -size);
     glEnd();
 
   glEndList();
@@ -862,7 +961,7 @@ void initGraphics(int argc, char *argv[]) {
   glutAddMenuEntry("Set Velocity", MENU_CUBE_TOP );
 
   // Create a menu
-  int mainMenu = glutCreateMenu( selectMenuItem );
+  glutCreateMenu( selectMenuItem );
 
   // Add menu items
   glutAddSubMenu("Top Face", cubeMenu);
@@ -878,7 +977,8 @@ void initGraphics(int argc, char *argv[]) {
 
   // Draw (and save on the GPU) the axes and floor
   makeAxes();
-  makeGridFloor(FLOOR_SIZE, 0);
+  makeGridFloor(WORLD_SIZE, FLOOR_HEIGHT);
+  makeCeiling(WORLD_SIZE, CEILING_HEIGHT);
 }
 
 /////////////////////////////////////////////////
