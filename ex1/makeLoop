@@ -17,6 +17,7 @@ testForError() {
 
 while true
 do
+	clear
 	if [[ $OSTYPE == "linux-gnu" ]]; then
 		echo "Building for Linux"
 		testForError "cogl ex1.c"
