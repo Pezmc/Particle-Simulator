@@ -130,7 +130,11 @@ typedef struct {
 
 /* Rotate the scene around */
 float cameraLoopYPosition = 0;
+float cameraLookYPosition = 0;
 float cameraLoopYAngle = 45;
+
+/* Emitter Y height */
+float emitterYPosition = 0;
 
 /* Have we received keyboard input yet? */
 int rotationKeyboardInputReceived = 0;
@@ -401,7 +405,7 @@ void drawBounce() {
  */
 void positionCamera() {
   gluLookAt(20.0, 10.0 + cameraLoopYPosition, 0.0, //eyeX, eyeY, eyeZ
-      0.0, 5.0, 0.0, //centerX, centerY, centerZ
+      0.0, 5.0 + cameraLookYPosition, 0.0, //centerX, centerY, centerZ
       0.0, 1.0, 0.0); //upX, upY, upZ
 
   // Rotate the scene
@@ -625,9 +629,14 @@ void calculateEmitters() {
       // Rotate very slowly
       //emitters[i].yawAngle += 30 * deltaTime;
 
-      //emitters[i].topRight.y += 0.01;
-      //emitters[i].bottomLeft.y += 0.01;
+      // Move emitters up 
+      emitters[i].topRight.y += emitterYPosition;
+      emitters[i].bottomLeft.y += emitterYPosition;
+     
   }
+      
+  // Reset the extra Y
+  emitterYPosition = 0;
 }
 
 ///////////////////////////////////////////////
@@ -685,6 +694,18 @@ void specialKeys(int key, int x, int y) {
       break;
     case GLUT_KEY_F4:
       bounceCoefficient += 0.5 * deltaTime;
+      break;
+    case GLUT_KEY_F5:
+      emitterYPosition -= 10 * deltaTime;
+      break;
+    case GLUT_KEY_F6:
+      emitterYPosition += 10 * deltaTime;
+      break;
+    case GLUT_KEY_F11:
+      cameraLookYPosition -= 20 * deltaTime;
+      break;
+    case GLUT_KEY_F12:
+      cameraLookYPosition += 20 * deltaTime;
       break;
   }
 } // cursor_keys()
@@ -875,10 +896,10 @@ void spin(int direction) {
 
   switch (direction) {
     case UP:
-      cameraLoopYPosition += 10 * deltaTime;
+      cameraLoopYPosition += 15 * deltaTime;
       break;
     case DOWN:
-      cameraLoopYPosition -= 10 * deltaTime;
+      cameraLoopYPosition -= 15 * deltaTime;
       break;
     case LEFT:
       cameraLoopYAngle += 60.0f * deltaTime;
@@ -888,7 +909,7 @@ void spin(int direction) {
       break;
   }
 
-  if (cameraLoopYPosition > 50) cameraLoopYPosition = 50;
+  if (cameraLoopYPosition > CEILING_HEIGHT - 12) cameraLoopYPosition = CEILING_HEIGHT - 12;
   if (cameraLoopYPosition < -9) cameraLoopYPosition = -9;
   if (cameraLoopYAngle > 360) cameraLoopYAngle -= 360;
   if (cameraLoopYAngle < 0) cameraLoopYAngle += 360;
