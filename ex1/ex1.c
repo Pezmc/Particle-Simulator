@@ -34,7 +34,7 @@
 #define EMITTER_LIMIT 6
 
 /* Particles/emiter limit */
-#define PARTICLES_PER_EMITTER_LIMIT 1000
+#define PARTICLES_PER_EMITTER_LIMIT 1
 
 /* Define Some Keys */
 #define UP 0
@@ -56,7 +56,7 @@
 typedef enum
 {
         MENU_CUBE_TOP,
-	MENU_CUBE_BOTTOM,
+        MENU_CUBE_BOTTOM,
         MENU_CUBE_FRONT,
         MENU_CUBE_LEFT,
         MENU_CUBE_BACK,
@@ -105,7 +105,9 @@ typedef struct {
   int firstSpawn;
 
   // Linked list of positions
-  PositionNode *previousPositions;
+  int previousPositionsCount;
+  PositionNode *previousPositionsRoot;
+  PositionNode *previousPositionsEnd;
 
 } Particle;
 
@@ -121,7 +123,7 @@ typedef struct {
 
   Vector spawnVelocity;
 
-  Particle particles[PARTICLES_PER_EMITTER_LIMIT];
+  Particle* particles;//[PARTICLES_PER_EMITTER_LIMIT];
 
   int numberOfParticles;
 } SurfaceEmitter;
@@ -180,7 +182,7 @@ float gravityStrength = GRAVITY_STRENGTH;
 float bounceCoefficient = BOUNCE_COEFFICIENT;
 
 /* Our array of emitters */
-SurfaceEmitter emitters[6];
+SurfaceEmitter emitters[EMITTER_LIMIT];
 int emitterCount = 0;
 
 ///////////////// Helpers ////////////////////
@@ -512,19 +514,22 @@ void calculateParticle(Particle *particle, SurfaceEmitter *emitter) {
   // If the particle has been killed
   if(particle->dead) {
 
+    // Free all the memory being used for previous particles
+    /*struct PositionNode* currentNode = particle->previousPositionsRoot;
+    struct PositionNode* oldNode;
+    if( currentNode && currentNode != NULL ) {
+      while ( currentNode->next ) {
+        oldNode = currentNode;
+        currentNode = currentNode->next;
+
+        free(oldNode);
+      }
+    }*/
+    //particle->previousPositionsRoot = 0; // point to nothing
+    //particle->previousPositionsCount = 0;
+
     // Respawn them here
     if((particle->firstSpawn || particle->deadTime > 5) && randomNumber() < 0.001) {
-
-      // Store the particles previous position
-      /*PositionNode* newPositionsRoot = malloc(sizeof(struct PositionNode));
-      if (newPositionsRoot == 0) {
-        fprintf(stderr, "Out of memory" );
-        return;
-      }
-      newPositionsRoot->position.x = particle->position.x;
-      newPositionsRoot->position.y = particle->position.y;
-      newPositionsRoot->position.z = particle->position.z;
-      newPositionsRoot->next = particle->previousPositions; // old root*/
 
       // Spawn in a random xyz between top left and bottom right
       particle->position.x = emitter->bottomLeft.x + (emitter->topRight.x - emitter->bottomLeft.x) * randomBetween(0.25,0.75);
@@ -543,6 +548,17 @@ void calculateParticle(Particle *particle, SurfaceEmitter *emitter) {
       particle->dead = 0;
       particle->deadTime = 0;
 
+      // Malloc the linked list item #1
+      PositionNode* newPositionsRoot = malloc(sizeof(struct PositionNode));
+      if (newPositionsRoot == 0) {
+        fprintf(stderr, "Out of memory" );
+        return;
+      }
+      newPositionsRoot->position.x = particle->position.x;
+      newPositionsRoot->position.y = particle->position.y;
+      newPositionsRoot->position.z = particle->position.z;
+      particle->previousPositionsRoot = newPositionsRoot;
+
       // Color
       if(emitter->r > 0) particle->r = emitter->r + randomBetween(-0.1,0.1);
       else particle->r = randomMax(0.75);
@@ -559,6 +575,23 @@ void calculateParticle(Particle *particle, SurfaceEmitter *emitter) {
   }
   // Particle is alive
   else {
+
+    // Store the particles previous position
+    if(particle->previousPositionsCount < 100) {
+      PositionNode* newPositionsRoot = malloc(sizeof(struct PositionNode));
+      //PositionNode* oldRoot = particle->previousPositionsRoot;
+      if (newPositionsRoot == 0) {
+        fprintf(stderr, "Out of memory" );
+        exit(0);
+        return;
+      }
+      newPositionsRoot->position.x = particle->position.x;
+      newPositionsRoot->position.y = particle->position.y;
+      newPositionsRoot->position.z = particle->position.z;
+      newPositionsRoot->next = particle->previousPositionsRoot; // old root
+      particle->previousPositionsRoot = newPositionsRoot;
+      particle->previousPositionsCount++;
+    }
 
     // Movement in X
     particle->velocity.x *= 1 - (deltaTime * 0.01); // drag
@@ -1021,10 +1054,15 @@ void createEmitter(int id) {
   emitters[id].yawAngle = 0;
 
   int i;
+  emitters[id].particles = (Particle*)calloc(PARTICLES_PER_EMITTER_LIMIT, sizeof(Particle));
   for(i = 0; i < PARTICLES_PER_EMITTER_LIMIT; i++) {
+    //emitters[id].particles[i] = (Particle*)calloc(1, sizeof(Particle));
     emitters[id].particles[i].dead = 1;
     emitters[id].particles[i].deadTime = 0;
     emitters[id].particles[i].firstSpawn = 1;
+    emitters[id].particles[i].previousPositionsCount = 0;
+    emitters[id].particles[i].previousPositionsRoot = NULL;
+    emitters[id].particles[i].previousPositionsEnd = NULL;
   }
   emitters[id].numberOfParticles = PARTICLES_PER_EMITTER_LIMIT;
 
