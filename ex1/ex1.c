@@ -182,7 +182,7 @@ float gravityStrength = GRAVITY_STRENGTH;
 float bounceCoefficient = BOUNCE_COEFFICIENT;
 
 /* Our array of emitters */
-SurfaceEmitter emitters[EMITTER_LIMIT];
+SurfaceEmitter *emitters;
 int emitterCount = 0;
 
 ///////////////// Helpers ////////////////////
@@ -675,25 +675,31 @@ void calculateEmitters() {
 ///////////////////////////////////////////////
 
 /**
- * Called when OpenGL is idle
+ * Rotate the camera
+ *  @param direction definedDirection (UP,LEFT,DOWN,RIGHT)
  */
-void idleTick(void) {
-  // Calculate FPS
-  calculateFPS();
+void spin(int direction) {
+  rotationKeyboardInputReceived = 1;
 
-  // Press any (currently down) keys
-  keySpecialOperations();
-
-  // If we've received no user input, then rotate
-  if (!rotationKeyboardInputReceived) {
-    cameraLoopYAngle += 10 * deltaTime;
+  switch (direction) {
+    case UP:
+      cameraLoopYPosition += 15 * deltaTime;
+      break;
+    case DOWN:
+      cameraLoopYPosition -= 15 * deltaTime;
+      break;
+    case LEFT:
+      cameraLoopYAngle += 60.0f * deltaTime;
+      break;
+    case RIGHT:
+      cameraLoopYAngle -= 60.0f * deltaTime;
+      break;
   }
 
-  // Calculate everything!
-  calculateEmitters();
-
-  //  Call display function (draw the current frame)
-  glutPostRedisplay();
+  if (cameraLoopYPosition > CEILING_HEIGHT - 12) cameraLoopYPosition = CEILING_HEIGHT - 12;
+  if (cameraLoopYPosition < -9) cameraLoopYPosition = -9;
+  if (cameraLoopYAngle > 360) cameraLoopYAngle -= 360;
+  if (cameraLoopYAngle < 0) cameraLoopYAngle += 360;
 }
 
 ////////////// Keyboard Presses ///////////////
@@ -769,7 +775,7 @@ void keySpecialUp(int key, int x, int y) {
  * Should be called every display loop
  * Uses the function cursor_keys for every pressed key
  */
-void keySpecialOperations(void) {
+void keySpecialOperations() {
   int i;
   for (i = 0; i < 246; i++) {
     if (keySpecialStates[i]) {
@@ -779,6 +785,33 @@ void keySpecialOperations(void) {
 }
 
 ///////////////////////////////////////////////
+
+/**
+ * Called when OpenGL is idle
+ */
+void idleTick(void) {
+  // Calculate FPS
+  calculateFPS();
+
+  // Press any (currently down) keys
+  keySpecialOperations();
+
+  // If we've received no user input, then rotate
+  if (!rotationKeyboardInputReceived) {
+    cameraLoopYAngle += 10 * deltaTime;
+  }
+
+  // Calculate everything!
+  calculateEmitters();
+
+  //  Call display function (draw the current frame)
+  glutPostRedisplay();
+}
+
+
+///////////////////////////////////////////////
+
+
 
 /**
  * Handle window resize
@@ -918,35 +951,7 @@ void makeCeiling(int size, int yPos) {
   glEndList();
 }
 
-///////////////////////////////////////////////
 
-/**
- * Rotate the camera
- *  @param direction definedDirection (UP,LEFT,DOWN,RIGHT)
- */
-void spin(int direction) {
-  rotationKeyboardInputReceived = 1;
-
-  switch (direction) {
-    case UP:
-      cameraLoopYPosition += 15 * deltaTime;
-      break;
-    case DOWN:
-      cameraLoopYPosition -= 15 * deltaTime;
-      break;
-    case LEFT:
-      cameraLoopYAngle += 60.0f * deltaTime;
-      break;
-    case RIGHT:
-      cameraLoopYAngle -= 60.0f * deltaTime;
-      break;
-  }
-
-  if (cameraLoopYPosition > CEILING_HEIGHT - 12) cameraLoopYPosition = CEILING_HEIGHT - 12;
-  if (cameraLoopYPosition < -9) cameraLoopYPosition = -9;
-  if (cameraLoopYAngle > 360) cameraLoopYAngle -= 360;
-  if (cameraLoopYAngle < 0) cameraLoopYAngle += 360;
-}
 
 ///////////////////////////////////////////////
 
@@ -1133,11 +1138,13 @@ void createEmitter(int id) {
 void createEmitters() {
 
   int e;
-  emitterCount = 6;
+
+  emitters = calloc(EMITTER_LIMIT, sizeof(SurfaceEmitter));
+
+  emitterCount = EMITTER_LIMIT;
   for(e = 0; e < emitterCount; e++) {
     createEmitter(e);
   }
-  //emitterCount = 6;
 }
 
 /////////////////////////////////////////////////
@@ -1147,6 +1154,7 @@ int main(int argc, char *argv[]) {
   srand(time(NULL));
 
   createEmitters();
+  return 0;
 
   // Boot the graphics engine
   initGraphics(argc, argv);
