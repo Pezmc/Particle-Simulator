@@ -14,12 +14,9 @@
 #include <time.h>
 #include <math.h>
 
-#ifdef __ECLIPSE__
-  #include <glut.h> //GLUT/glut.h
-  #include <OpenGL.h> //OpenGL/OpenGL.h
-#elif defined(__APPLE__)
-  #include <GLUT/glut.h>
-  #include <OpenGL/OpenGL.h>
+#ifdef __APPLE__
+  #include <GLUT/glut.h> //GLUT/glut.h
+  #include <OpenGL/OpenGL.h> //OpenGL/OpenGL.h
 #else
   #include <GL/glut.h>
 #endif
@@ -34,7 +31,8 @@
 #define EMITTER_LIMIT 6
 
 /* Particles/emiter limit */
-#define PARTICLES_PER_EMITTER_LIMIT 1
+#define PARTICLES_PER_EMITTER_LIMIT 100000
+#define DEFAULT_PARTICLE_LIMIT 6000
 
 /* Define Some Keys */
 #define UP 0
@@ -52,19 +50,51 @@
 #define FLOOR_HEIGHT 0
 #define CEILING_HEIGHT 100
 
+/* What gravity type are we using? */
+typedef enum
+{
+    VERLET_APPROXIMATION,
+    REAL_GRAVITY
+} GRAVITY_TYPE;
+
 /* Items in my menu */
 typedef enum
 {
-        MENU_CUBE_TOP,
-        MENU_CUBE_BOTTOM,
-        MENU_CUBE_FRONT,
-        MENU_CUBE_LEFT,
-        MENU_CUBE_BACK,
-        MENU_CUBE_RIGHT
-} MENU_TYPE;
+    MENU_GLOBAL_SETTINGS,
+    MENU_LOCAL_SETTINGS
+} MENU_MAIN_TYPE;
+
+typedef enum
+{
+    MENU_GLOBAL_BOUNCE,
+    MENU_GLOBAL_GRAVITY,
+    MENU_GLOBAL_PARTICLES,
+    MENU_GLOBAL_LIFETIME
+} MENU_GLOBAL_TYPE;
+
+typedef enum
+{
+    MENU_LOCAL_COLOR,
+    MENU_LOCAL_PARTICLES,
+    MENU_LOCAL_VELOCITY
+} MENU_LOCAL_TYPE;
 
 // Assign a default value
-MENU_TYPE CURRENT_MENU_SHOW = MENU_CUBE_TOP;
+MENU_MAIN_TYPE CURRENT_MENU_SHOW = MENU_GLOBAL_SETTINGS;
+
+// Colors
+typedef enum
+{
+    RED, PINK, ORANGE, YELLOW, GREEN, BLUE, INDIGO, VIOLET, WHITE, BLACK
+} COLOR;
+
+typedef enum
+{
+    POINT,
+    JITTER_POINTS,
+    LINES,
+    BILLBOARD
+} RENDER_TYPE;
 
 ////////////// Structs //////////////
 
@@ -91,7 +121,9 @@ typedef struct PositionNode {
  */
 typedef struct {
   GLfloat r, g, b; // colour
+  GLfloat alpha; // how transparent
   Vector position; // current position
+  Vector previousPosition; // last frame position
   Vector velocity; //current velocity
 
   // Currently colliding with the floor?
@@ -101,13 +133,17 @@ typedef struct {
   int dead;
   float deadTime;
 
+  // how alive
+  //float lifeTime;
+
+  // Should we draw it?
+  int display;
+
   // Spawned yet?
   int firstSpawn;
 
   // Linked list of positions
-  int previousPositionsCount;
-  PositionNode *previousPositionsRoot;
-  PositionNode *previousPositionsEnd;
+  PositionNode *previousPositions;
 
 } Particle;
 
@@ -123,7 +159,7 @@ typedef struct {
 
   Vector spawnVelocity;
 
-  Particle* particles;//[PARTICLES_PER_EMITTER_LIMIT];
+  Particle particles[PARTICLES_PER_EMITTER_LIMIT];
 
   int numberOfParticles;
 } SurfaceEmitter;
@@ -134,6 +170,7 @@ typedef struct {
 float cameraLoopYPosition = 0;
 float cameraLookYPosition = 0;
 float cameraLoopYAngle = 45;
+float cameraDistance = 0;
 
 /* Emitter Y height */
 float emitterYPosition = 0;
@@ -148,7 +185,7 @@ int WINDOW_HEIGHT = 600;
 /* Axis */
 GLuint axisList;
 int AXIS_SIZE = 100;
-int axisEnabled = 1;
+int axisEnabled = 0;
 
 /* Floor grid */
 int WORLD_SIZE = 100;
@@ -173,7 +210,7 @@ int lastFPSUpdateTime = 0;
 int lastFrameTime = 0;
 
 /* How many second each frame represents (usually less than 1) */
-float deltaTime = 0.01;
+float deltaTime = 0.001;
 
 /* How strong is gravity at the moment */
 float gravityStrength = GRAVITY_STRENGTH;
@@ -182,8 +219,20 @@ float gravityStrength = GRAVITY_STRENGTH;
 float bounceCoefficient = BOUNCE_COEFFICIENT;
 
 /* Our array of emitters */
-SurfaceEmitter *emitters;
+SurfaceEmitter emitters[EMITTER_LIMIT];
 int emitterCount = 0;
+
+/* Global settings */
+int currentEmitterParticleLimit = 1000;
+int currentParticleLimit = DEFAULT_PARTICLE_LIMIT;
+int paused = 0;
+float speed = 1;
+int selectedCubeFace = -1;
+
+RENDER_TYPE currentRenderType = POINT;
+
+/* What gravity type are we using? */
+GRAVITY_TYPE currentGravityType = REAL_GRAVITY;
 
 ///////////////// Helpers ////////////////////
 
@@ -206,23 +255,94 @@ double randomNumber() {
 /////////////// Main Draw ///////////////////
 
 /* Draw an individual particle */
-void drawParticle(Particle particle) {
+void drawPointParticle(Particle particle) {
   glBegin(GL_POINTS);
     glColor3f(particle.r, particle.g, particle.b); // color
     glVertex3f(particle.position.x, particle.position.y, particle.position.z); // position
   glEnd();
 }
 
+/* Draw random particles near this particle */
+void drawJitterPointParticle(Particle particle) {
+  glBegin(GL_POINTS);
+    int i;
+    for (i = 0; i < 10; i++) {
+      glColor3f(particle.r + randomBetween(-0.1,0.1), particle.g + randomBetween(-0.1,0.1), particle.b + randomBetween(-0.1,0.1)); // color
+      glVertex3f(particle.position.x + randomBetween(-0.5,0.5), particle.position.y + randomBetween(-0.5,0.5), particle.position.z + randomBetween(-0.5,0.5));
+    }
+  glEnd();
+}
+
+/* Draw each particle as a 2d square */
+void drawBillboard(Particle particle) {
+
+  double size = 0.5 / 2;
+
+  glBegin(GL_POLYGON);
+
+    glColor4f(particle.r, particle.g, particle.b, particle.alpha); // color
+
+    glVertex3f(particle.position.x-size, particle.position.y-size, particle.position.z);
+    glVertex3f(particle.position.x-size, particle.position.y+size, particle.position.z);
+    glVertex3f(particle.position.x+size, particle.position.y+size, particle.position.z);
+    glVertex3f(particle.position.x+size, particle.position.y-size, particle.position.z);
+
+  glEnd();
+
+}
+
+void drawLine(Particle particle) {
+
+  glLineWidth(3);
+
+  glColor3f(particle.r, particle.g, particle.b); // color
+
+  glBegin(GL_LINES);
+    glVertex3f(particle.previousPosition.x, particle.previousPosition.y, particle.previousPosition.z);
+    glVertex3f(particle.position.x, particle.position.y, particle.position.z);
+  glEnd();
+
+}
+
 /* Draw all the particles on the screen */
 void drawParticles(SurfaceEmitter emitter) {
+
   // Draw each particle for the emitter
   int i;
-  for (i = 0; i < emitter.numberOfParticles; i++) {
-    drawParticle(emitter.particles[i]);
+
+  if (currentRenderType == POINT) {
+    for (i = 0; i < emitter.numberOfParticles; i++) {
+      if(emitter.particles[i].display)
+        drawPointParticle(emitter.particles[i]);
+    }
   }
+
+  else if (currentRenderType == JITTER_POINTS) {
+    for (i = 0; i < emitter.numberOfParticles; i++) {
+      if(emitter.particles[i].display)
+        drawJitterPointParticle(emitter.particles[i]);
+    }
+  }
+
+  else if (currentRenderType == BILLBOARD) {
+
+    for (i = 0; i < emitter.numberOfParticles; i++) {
+      if(emitter.particles[i].display)
+        drawBillboard(emitter.particles[i]);
+    }
+
+  } else if(currentRenderType == LINES) {
+    for (i = 0; i < emitter.numberOfParticles; i++) {
+      if(emitter.particles[i].display)
+        drawLine(emitter.particles[i]);
+    }
+  }
+
+
 }
 
 /* Draw all the emitters on the screen */
+int blink = 0;
 void drawEmitters() {
   int i;
   for(i = 0; i < emitterCount; i++) {
@@ -233,20 +353,34 @@ void drawEmitters() {
 
       // Draw the emitter plane
       glBegin(GL_POLYGON);
-        glColor3f(emitters[i].r, emitters[i].g, emitters[i].b);
-  
+
+        if(i == selectedCubeFace) {
+
+          if(blink > 50) {
+            glColor3f(0.7, 0.7, 0.7);
+          } else {
+            glColor3f(emitters[i].r, emitters[i].g, emitters[i].b);
+          }
+
+          if(blink > 100)
+            blink = 0;
+          blink++;
+
+        } else
+          glColor3f(emitters[i].r, emitters[i].g, emitters[i].b);
+
         // Top right corner
         glVertex3f(emitters[i].topRight.x,   emitters[i].topRight.y,   emitters[i].topRight.z);
-  
+
         // If Y is equal we are drawing the bottomRight (from above)
         if(emitters[i].bottomLeft.y == emitters[i].topRight.y)
           glVertex3f(emitters[i].topRight.x, emitters[i].topRight.y,   emitters[i].bottomLeft.z);
         else
           glVertex3f(emitters[i].topRight.x, emitters[i].bottomLeft.y, emitters[i].topRight.z);
-  
+
         // Bottom left corner
         glVertex3f(emitters[i].bottomLeft.x, emitters[i].bottomLeft.y, emitters[i].bottomLeft.z);
-  
+
         // If Y is equal we are drawing the topLeft (from above)
         if(emitters[i].bottomLeft.y == emitters[i].topRight.y)
           glVertex3f(emitters[i].bottomLeft.x, emitters[i].topRight.y,   emitters[i].topRight.z);
@@ -400,6 +534,25 @@ void drawBounce() {
   drawString(GLUT_BITMAP_HELVETICA_10, 0.8, 0.93, str);
 }
 
+/**
+ * Draw the current particle count on the screen
+ */
+void drawParticleCount() {
+  char str[80];
+  sprintf(str, "Particle Count: %d", currentParticleLimit);
+
+  //  Print the FPS to the window
+  drawString(GLUT_BITMAP_HELVETICA_10, 0.8, 0.91, str);
+}
+
+void drawSpeed() {
+  char str[80];
+  sprintf(str, "Speed: %3.0f%%", speed * 100);
+
+  //  Print the FPS to the window
+  drawString(GLUT_BITMAP_HELVETICA_10, 0.8, 0.89, str);
+}
+
 ///////////////////////////////////////////////
 
 /**
@@ -409,6 +562,9 @@ void positionCamera() {
   gluLookAt(20.0, 10.0 + cameraLoopYPosition, 0.0, //eyeX, eyeY, eyeZ
       0.0, 5.0 + cameraLookYPosition, 0.0, //centerX, centerY, centerZ
       0.0, 1.0, 0.0); //upX, upY, upZ
+
+  // Move the camera "backwards"
+  glTranslatef(-cameraDistance, 0.0, 0.0);
 
   // Rotate the scene
   glRotatef(cameraLoopYAngle, 0.f, 1.f, 0.f); /* orbit the Y axis */
@@ -450,8 +606,18 @@ void display() {
     drawBounce();
   }
 
+  // Particles
+  if (currentParticleLimit != DEFAULT_PARTICLE_LIMIT) {
+    drawParticleCount();
+  }
+
+  // Speed
+  if (speed != 1) {
+    drawSpeed();
+  }
+
   // Make the particles larger
-  glPointSize(10);
+  glPointSize(5); //10
 
   // Draw every emitter
   drawEmitters();
@@ -500,7 +666,7 @@ void calculateFPS() {
   // Calculate time passed since last frame
   float timeSinceLastFrameMS = currentTime - lastFrameTime;
 
-  // Delta time is used for physica
+  // Delta time is used for physics
   deltaTime = timeSinceLastFrameMS / (1000.0f);
 
   lastFrameTime = currentTime;
@@ -511,25 +677,25 @@ void calculateFPS() {
  */
 void calculateParticle(Particle *particle, SurfaceEmitter *emitter) {
 
+  // Data time, taking into account requested speed
+  float deltaTimeSpeed = deltaTime * speed;
+
   // If the particle has been killed
   if(particle->dead) {
 
-    // Free all the memory being used for previous particles
-    /*struct PositionNode* currentNode = particle->previousPositionsRoot;
-    struct PositionNode* oldNode;
-    if( currentNode && currentNode != NULL ) {
-      while ( currentNode->next ) {
-        oldNode = currentNode;
-        currentNode = currentNode->next;
-
-        free(oldNode);
-      }
-    }*/
-    //particle->previousPositionsRoot = 0; // point to nothing
-    //particle->previousPositionsCount = 0;
-
     // Respawn them here
     if((particle->firstSpawn || particle->deadTime > 5) && randomNumber() < 0.001) {
+
+      // Store the particles previous position
+      /*PositionNode* newPositionsRoot = malloc(sizeof(struct PositionNode));
+      if (newPositionsRoot == 0) {
+        fprintf(stderr, "Out of memory" );
+        return;
+      }
+      newPositionsRoot->position.x = particle->position.x;
+      newPositionsRoot->position.y = particle->position.y;
+      newPositionsRoot->position.z = particle->position.z;
+      newPositionsRoot->next = particle->previousPositions; // old root*/
 
       // Spawn in a random xyz between top left and bottom right
       particle->position.x = emitter->bottomLeft.x + (emitter->topRight.x - emitter->bottomLeft.x) * randomBetween(0.25,0.75);
@@ -541,23 +707,22 @@ void calculateParticle(Particle *particle, SurfaceEmitter *emitter) {
       particle->velocity.y = emitter->spawnVelocity.y + randomBetween(-1,1);
       particle->velocity.z = emitter->spawnVelocity.z + randomBetween(-1,1);
 
+      if(currentGravityType == VERLET_APPROXIMATION) {
+
+        // Add default velocity
+        particle->previousPosition.x = particle->position.x - particle->velocity.x * deltaTimeSpeed;
+        particle->previousPosition.y = particle->position.y - particle->velocity.y * deltaTimeSpeed;
+        particle->previousPosition.z = particle->position.z - particle->velocity.z * deltaTimeSpeed;
+
+      }
+
       // Colliding
       particle->yCollision = 0;
 
       // Particle is "alive"
       particle->dead = 0;
       particle->deadTime = 0;
-
-      // Malloc the linked list item #1
-      PositionNode* newPositionsRoot = malloc(sizeof(struct PositionNode));
-      if (newPositionsRoot == 0) {
-        fprintf(stderr, "Out of memory" );
-        return;
-      }
-      newPositionsRoot->position.x = particle->position.x;
-      newPositionsRoot->position.y = particle->position.y;
-      newPositionsRoot->position.z = particle->position.z;
-      particle->previousPositionsRoot = newPositionsRoot;
+      particle->display = 1;
 
       // Color
       if(emitter->r > 0) particle->r = emitter->r + randomBetween(-0.1,0.1);
@@ -568,55 +733,78 @@ void calculateParticle(Particle *particle, SurfaceEmitter *emitter) {
 
       if(emitter->b > 0) particle->b = emitter->b + randomBetween(-0.1,0.1);
       else particle->b = randomMax(0.75);
+
+      // Alpha
+      particle->alpha = 0.75 + randomBetween(-0.5,0.5);
+      if(particle->alpha > 1)
+        particle->alpha = 1;
+
     } else {
-      particle->deadTime += deltaTime;
+      particle->deadTime += deltaTimeSpeed;
     }
 
   }
   // Particle is alive
   else {
 
-    // Store the particles previous position
-    if(particle->previousPositionsCount < 100) {
-      PositionNode* newPositionsRoot = malloc(sizeof(struct PositionNode));
-      //PositionNode* oldRoot = particle->previousPositionsRoot;
-      if (newPositionsRoot == 0) {
-        fprintf(stderr, "Out of memory" );
-        exit(0);
-        return;
-      }
-      newPositionsRoot->position.x = particle->position.x;
-      newPositionsRoot->position.y = particle->position.y;
-      newPositionsRoot->position.z = particle->position.z;
-      newPositionsRoot->next = particle->previousPositionsRoot; // old root
-      particle->previousPositionsRoot = newPositionsRoot;
-      particle->previousPositionsCount++;
+    // Drag
+    particle->velocity.x *= 1 - (deltaTimeSpeed * 0.01); // drag
+    particle->velocity.y *= 1 - (deltaTimeSpeed * 0.01); // drag
+    particle->velocity.z *= 1 - (deltaTimeSpeed * 0.01); // drag
+
+    if(currentGravityType == REAL_GRAVITY) {
+
+      // Movement in X
+      particle->position.x = particle->position.x + particle->velocity.x * deltaTimeSpeed;
+
+      // Movement in Y (+ gravity)
+      particle->velocity.y = particle->velocity.y + gravityStrength * deltaTimeSpeed / 2; // gravity #1
+      particle->position.y = particle->position.y + particle->velocity.y * deltaTimeSpeed; // update position
+      particle->velocity.y = particle->velocity.y + gravityStrength * deltaTimeSpeed / 2; // gravity #2
+
+      // Movement in Z
+      particle->position.z = particle->position.z + particle->velocity.z * deltaTimeSpeed;
+
     }
+    else if(currentGravityType == VERLET_APPROXIMATION) {
 
-    // Movement in X
-    particle->velocity.x *= 1 - (deltaTime * 0.01); // drag
-    particle->position.x = particle->position.x + particle->velocity.x * deltaTime;
+      Vector temp = particle->position;
 
-    // Movement in Y (+ gravity)
-    particle->velocity.y *= 1 - (deltaTime * 0.01); // drag
-    particle->velocity.y = particle->velocity.y + gravityStrength * deltaTime / 2; // gravity #1
-    particle->position.y = particle->position.y + particle->velocity.y * deltaTime; // update position
-    particle->velocity.y = particle->velocity.y + gravityStrength * deltaTime / 2; // gravity #2
+      //P.Position += P.Position - P.OldPosition + P.Acceleration*Timestep*Timestep;
+      particle->position.x += particle->position.x - particle->previousPosition.x;
+      particle->position.y += particle->position.y - particle->previousPosition.y + gravityStrength * deltaTimeSpeed * deltaTimeSpeed;
+      particle->position.z += particle->position.z - particle->previousPosition.z;
 
-    // Movement in Z
-    particle->velocity.z *= 1 - (deltaTime * 0.01); // drag
-    particle->position.z = particle->position.z + particle->velocity.z * deltaTime;
+      // Store previous position
+      particle->previousPosition.x = temp.x;
+      particle->previousPosition.y = temp.y;
+      particle->previousPosition.z = temp.z;
+
+    }
 
     // If we are below the floor, or above the "ceiling"
     if (!particle->yCollision && (particle->position.y <= FLOOR_HEIGHT || particle->position.y >= CEILING_HEIGHT)) { // floor
-      particle->velocity.y *= -bounceCoefficient - randomBetween(0, 0.15); // bounce (lose velocity) and go the other way
-      particle->yCollision = 1;
 
-      // The floor is a bit bumpy, occasionally add other forces
-      if (randomNumber() < 0.25)
-        particle->velocity.x += randomBetween(-0.5,0.5);
-      if (randomNumber() < 0.25)
-        particle->velocity.z += randomBetween(-0.5,0.5);
+      if(currentGravityType == REAL_GRAVITY) {
+        particle->velocity.y *= -bounceCoefficient - randomBetween(0, 0.15); // bounce (lose velocity) and go the other way
+
+        // The floor is a bit bumpy, occasionally add other forces
+        if (randomNumber() < 0.25)
+          particle->velocity.x += randomBetween(-0.5,0.5);
+        if (randomNumber() < 0.25)
+          particle->velocity.z += randomBetween(-0.5,0.5);
+
+      } else if(currentGravityType == VERLET_APPROXIMATION) {
+
+        // Swap the particles position in y (go back the other way)
+        Vector temp = particle->previousPosition;
+        particle->previousPosition.y = particle->position.y;
+
+        // Dampen the velocity slightly when swapping
+        particle->position.y += (temp.y - particle->position.y) * bounceCoefficient;
+
+      }
+      particle->yCollision = 1;
 
     }
     // If we're clear of the floor
@@ -627,13 +815,24 @@ void calculateParticle(Particle *particle, SurfaceEmitter *emitter) {
     // Particle below floor (or above ceiling) and currently colliding
     else {
 
-      // Delete the particle it's below the floor
-      if (particle->position.y <= FLOOR_HEIGHT + 0.01 && particle->velocity.y <= 0.01) {
-        particle->dead = 1;
-      }
-      // Delete the particle if it's above the ceiling
-      else if(particle->position.y >= CEILING_HEIGHT - 0.01 && particle->velocity.y >= -0.01) {
-        particle->dead = 1;
+      if(currentGravityType == REAL_GRAVITY) {
+        // Delete the particle it's below the floor
+        if (particle->position.y <= FLOOR_HEIGHT + 0.01 && particle->velocity.y <= 0.01) {
+          particle->dead = 1;
+        }
+        // Delete the particle if it's above the ceiling
+        else if(particle->position.y >= CEILING_HEIGHT - 0.01 && particle->velocity.y >= -0.01) {
+          particle->dead = 1;
+        }
+      } else if(currentGravityType == VERLET_APPROXIMATION) {
+        // Delete the particle it's below the floor and not moving
+        if (particle->position.y <= FLOOR_HEIGHT + 0.01 && particle->position.y - particle->previousPosition.y  <= 0.01) {
+          particle->dead = 1;
+        }
+        // Delete the particle if it's above the ceiling
+        else if(particle->position.y >= CEILING_HEIGHT - 0.01 && particle->position.y - particle->previousPosition.y >= -0.01) {
+          particle->dead = 1;
+        }
       }
 
     }
@@ -662,12 +861,12 @@ void calculateEmitters() {
       // Rotate very slowly
       //emitters[i].yawAngle += 30 * deltaTime;
 
-      // Move emitters up 
+      // Move emitters up
       emitters[i].topRight.y += emitterYPosition;
       emitters[i].bottomLeft.y += emitterYPosition;
-     
+
   }
-      
+
   // Reset the extra Y
   emitterYPosition = 0;
 }
@@ -751,12 +950,101 @@ void specialKeys(int key, int x, int y) {
 
 ////////////// Keyboard Handling ////////////////
 
+/* Arrays for current key state */
+int keyStates[255]; // Create an array of boolean values of length 255 (0-254)
+
 /* Standard key press */
-void keyboard(unsigned char key, int x, int y) {
+void keyboardDown(int key, int x, int y) {
   if (key == 27)
     exit(0);
-  glutPostRedisplay();
+  else if (key == ' ') {
+      paused = !paused;
+      glutPostRedisplay();
+  }
+  else if (key == 'z') {
+    axisEnabled = !axisEnabled;
+  }
+  else if (key == '1') {
+    selectedCubeFace = 0;
+  }
+  else if (key == '2') {
+    selectedCubeFace = 1;
+  }
+  else if (key == '3') {
+    selectedCubeFace = 2;
+  }
+  else if (key == '4') {
+    selectedCubeFace = 3;
+  }
+  else if (key == '5') {
+    selectedCubeFace = 4;
+  }
+  else if (key == '6') {
+    selectedCubeFace = 5;
+  }
+  else if (key == '0') {
+    selectedCubeFace = -1;
+  }
+  else if (key == 'x') {
+    printf("CameraLookYPosition: %f\n", cameraLookYPosition);
+    printf("CameraLoopYAngle: %f\n", cameraLoopYAngle);
+    printf("CameraLoopYPosition: %f\n", cameraLoopYPosition);
+    printf("CameraDistance: %f\n", cameraDistance);
+    printf("\n");
+    printf("Gravity: %f\n", gravityStrength);
+    printf("Bounce: %f\n", bounceCoefficient);
+    printf("Particle Count: %d\n", currentParticleLimit);
+    printf("Gravity Type: %d\n", currentGravityType);
+    printf("\n\n");
+  } else {
+    keyStates[key] = 1;
+  }
 }
+
+/* Key released */
+void keyboardUp(int key, int x, int y) {
+  keyStates[key] = 0;
+}
+
+/* Handle standard key press */
+void keyboardKeys(int key) {
+  switch (key) {
+    case 'w':
+      cameraDistance -= 10 * deltaTime;
+
+      if (cameraDistance < -15) cameraDistance = -15;
+      break;
+    case 's':
+      cameraDistance += 10 * deltaTime;
+
+      if (cameraDistance > 19) cameraDistance = 19;
+      break;
+    case ',':
+    case '<':
+      speed *= 1 - (0.5 * deltaTime);
+
+      if(speed <= 0.01) speed = 0;
+      break;
+    case '.':
+    case '>':
+      if(speed <= 0) speed = 0.1;
+      else speed *= 1 + (0.5 * deltaTime);
+
+      if(speed > 10) speed = 10;
+      break;
+  }
+}
+
+/* Run all the pressed keys */
+void keyboardOperations(void) {
+  int i;
+  for (i = 0; i < 255; i++) {
+    if (keyStates[i]) {
+      keyboardKeys(i);
+    }
+  }
+}
+
 
 /* Arrays for current key state */
 int keySpecialStates[246]; // Create an array of boolean values of length 246 (0-245)
@@ -775,7 +1063,7 @@ void keySpecialUp(int key, int x, int y) {
  * Should be called every display loop
  * Uses the function cursor_keys for every pressed key
  */
-void keySpecialOperations() {
+void keySpecialOperations(void) {
   int i;
   for (i = 0; i < 246; i++) {
     if (keySpecialStates[i]) {
@@ -794,6 +1082,7 @@ void idleTick(void) {
   calculateFPS();
 
   // Press any (currently down) keys
+  keyboardOperations();
   keySpecialOperations();
 
   // If we've received no user input, then rotate
@@ -802,16 +1091,14 @@ void idleTick(void) {
   }
 
   // Calculate everything!
-  calculateEmitters();
+  if(!paused)
+    calculateEmitters();
 
   //  Call display function (draw the current frame)
   glutPostRedisplay();
 }
 
-
 ///////////////////////////////////////////////
-
-
 
 /**
  * Handle window resize
@@ -892,6 +1179,7 @@ void makeAxes() {
 
   glEndList();
 }*/
+
 /**
  * Create a display list for drawing the floor
  * Tweaked from ex1 of COMP27112 by Toby Howard
@@ -951,96 +1239,7 @@ void makeCeiling(int size, int yPos) {
   glEndList();
 }
 
-
-
 ///////////////////////////////////////////////
-
-// Menu handling function definition
-void selectMenuItem(int item)
-{
-        switch (item)
-        {
-	case MENU_CUBE_TOP:
-	case MENU_CUBE_BOTTOM:
-	case MENU_CUBE_FRONT:
-	case MENU_CUBE_LEFT:
-	case MENU_CUBE_BACK:
-	case MENU_CUBE_RIGHT:
-                CURRENT_MENU_SHOW = (MENU_TYPE) item;
-                break;
-        default:
-                break;
-        }
-
-        glutPostRedisplay();
-
-        return;
-}
-
-///////////////////////////////////////////////
-
-void initGraphics(int argc, char *argv[]) {
-  glutInit(&argc, argv);
-
-  // Spawn a window
-  glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
-  glutInitWindowPosition((glutGet(GLUT_SCREEN_WIDTH) - WINDOW_WIDTH)/2,
-                         (glutGet(GLUT_SCREEN_HEIGHT) - WINDOW_HEIGHT)/2);
-  glutInitDisplayMode(GLUT_DOUBLE | GLUT_DEPTH);
-  glutCreateWindow("COMP37111 Particles");
-
-  // Connect my function
-  glutDisplayFunc(display);
-  glutIdleFunc(idleTick);
-  glutKeyboardFunc(keyboard);
-  glutReshapeFunc(reshape);
-
-  // Keyboard Functions, derived from:
-  // http://www.swiftless.com/tutorials/opengl/keyboard.html
-  glutSetKeyRepeat(GLUT_KEY_REPEAT_OFF);
-  glutSpecialFunc(keySpecial); //key press
-  glutSpecialUpFunc(keySpecialUp); //key up
-
-  // Sky blue
-  glClearColor(0.53f, 0.808f, 0.98f, 0.0f);
-
-  // Enable depth test
-  glEnable(GL_DEPTH_TEST);
-
-  // Accept ift closer to the camera
-  glDepthFunc(GL_LESS);
-
-  // Smooth points
-  glEnable(GL_POINT_SMOOTH);
-
-
-  int cubeMenu = glutCreateMenu( selectMenuItem );
-  glutAddMenuEntry("Set Color", MENU_CUBE_TOP );
-  glutAddMenuEntry("Set Particles", MENU_CUBE_TOP );
-  glutAddMenuEntry("Set Velocity", MENU_CUBE_TOP );
-
-  // Create a menu
-  glutCreateMenu( selectMenuItem );
-
-  // Add menu items
-  glutAddSubMenu("Top Face", cubeMenu);
-  //glutAddMenuEntry("Top Face", MENU_CUBE_TOP);
-  glutAddMenuEntry("Bottom Face", MENU_CUBE_BOTTOM);
-  glutAddMenuEntry("Front Face", MENU_CUBE_FRONT);
-  glutAddMenuEntry("Left Face", MENU_CUBE_LEFT);
-  glutAddMenuEntry("Back Face", MENU_CUBE_BACK);
-  glutAddMenuEntry("Right Face", MENU_CUBE_RIGHT);
-
-  // Associate a mouse button with menu
-  glutAttachMenu(GLUT_RIGHT_BUTTON);
-
-  // Draw (and save on the GPU) the axes and floor
-  makeAxes();
-  makeGridFloor(WORLD_SIZE, FLOOR_HEIGHT);
-  makeCeiling(WORLD_SIZE, CEILING_HEIGHT);
-}
-
-/////////////////////////////////////////////////
 
 void createEmitter(int id) {
   // Defaults
@@ -1058,18 +1257,17 @@ void createEmitter(int id) {
   emitters[id].spawnVelocity.z = 0;
   emitters[id].yawAngle = 0;
 
+  // Reset all particles
   int i;
-  emitters[id].particles = (Particle*)calloc(PARTICLES_PER_EMITTER_LIMIT, sizeof(Particle));
-  for(i = 0; i < PARTICLES_PER_EMITTER_LIMIT; i++) {
-    //emitters[id].particles[i] = (Particle*)calloc(1, sizeof(Particle));
+  for(i = 0; i < PARTICLES_PER_EMITTER_LIMIT; i++) { //PARTICLES_PER_EMITTER_LIMIT
     emitters[id].particles[i].dead = 1;
     emitters[id].particles[i].deadTime = 0;
     emitters[id].particles[i].firstSpawn = 1;
-    emitters[id].particles[i].previousPositionsCount = 0;
-    emitters[id].particles[i].previousPositionsRoot = NULL;
-    emitters[id].particles[i].previousPositionsEnd = NULL;
+    emitters[id].particles[i].display = 0;
   }
-  emitters[id].numberOfParticles = PARTICLES_PER_EMITTER_LIMIT;
+
+  // Set our current limit
+  emitters[id].numberOfParticles = currentEmitterParticleLimit;
 
   // Details for this ID
   switch(id) {
@@ -1128,7 +1326,7 @@ void createEmitter(int id) {
       emitters[id].topRight.x = 1;
       emitters[id].topRight.y = 12;
       emitters[id].topRight.z = 1;
-      emitters[id].numberOfParticles = 100;
+      emitters[id].numberOfParticles = currentEmitterParticleLimit / 10;
       emitters[id].spawnVelocity.y = 10;
     break;
   }
@@ -1138,13 +1336,290 @@ void createEmitter(int id) {
 void createEmitters() {
 
   int e;
-
-  emitters = calloc(EMITTER_LIMIT, sizeof(SurfaceEmitter));
-
-  emitterCount = EMITTER_LIMIT;
+  emitterCount = 6;
   for(e = 0; e < emitterCount; e++) {
     createEmitter(e);
   }
+  //emitterCount = 6;
+}
+
+/////////////////////////////////////////////////
+
+void selectGlobalBounce(int value) {
+  // Hacky way of handling value
+  bounceCoefficient = value / 100.0;
+}
+
+void selectGlobalGravity(int value) {
+  gravityStrength = value / 100.0;
+}
+
+void selectGlobalParticles(int value) {
+
+  currentEmitterParticleLimit = value / emitterCount;
+  if(currentEmitterParticleLimit > PARTICLES_PER_EMITTER_LIMIT)
+     currentEmitterParticleLimit = PARTICLES_PER_EMITTER_LIMIT;
+
+  currentParticleLimit = currentEmitterParticleLimit * emitterCount;
+
+  // Reset all emitters with new limit
+  createEmitters();
+}
+
+void selectGlobalGravityType(int type) {
+  currentGravityType = type;
+
+  // Reset to new gravity
+  createEmitters();
+}
+
+void selectGlobalDrawType(int type) {
+  currentRenderType = type;
+
+  // For lines we must be using Verlet
+  if(type == LINES) {
+    if(currentGravityType != VERLET_APPROXIMATION) {
+      selectGlobalGravityType(VERLET_APPROXIMATION);
+    }
+  }
+}
+
+/////////
+
+void setEmitterColor(int faceID, COLOR color) {
+  emitters[faceID].r = 0;
+  emitters[faceID].g = 0;
+  emitters[faceID].b = 0;
+
+  switch(color) {
+    case RED:
+      emitters[faceID].r = 1;
+    break;
+
+    case PINK:
+      emitters[faceID].r = 1;
+      emitters[faceID].g = 0.4;
+      emitters[faceID].b = 0.7;
+    break;
+
+    case ORANGE:
+      emitters[faceID].r = 1;
+      emitters[faceID].g = 0.64;
+    break;
+
+    case YELLOW:
+      emitters[faceID].r = 1;
+      emitters[faceID].g = 1;
+    break;
+
+    case GREEN:
+      emitters[faceID].g = 1;
+    break;
+
+    case BLUE:
+      emitters[faceID].b = 1;
+    break;
+
+    case INDIGO:
+      emitters[faceID].r = 0.58;
+      emitters[faceID].b = 0.83;
+    break;
+
+    case VIOLET:
+      emitters[faceID].r = 0.63;
+      emitters[faceID].g = 0.13;
+      emitters[faceID].b = 0.94;
+    break;
+
+    case BLACK:
+    break;
+
+    case WHITE:
+      emitters[faceID].r = 1;
+      emitters[faceID].g = 1;
+      emitters[faceID].b = 1;
+    break;
+  }
+}
+
+void selectLocalColorItem(int color) {
+
+  if(selectedCubeFace < 0) {
+    // Call this function for each face
+    int id;
+    for (id = 0; id < EMITTER_LIMIT; id ++) {
+      setEmitterColor(id, color);
+    }
+  } else {
+    setEmitterColor(selectedCubeFace, color);
+  }
+}
+
+void setEmitterParticles(int faceID, int count) {
+  emitters[faceID].numberOfParticles = count;
+}
+
+void selectLocalParticleItem(int count) {
+
+  if(selectedCubeFace < 0) {
+    // Call this function for each face
+    int id;
+    for (id = 0; id < EMITTER_LIMIT; id ++) {
+      setEmitterParticles(id, count);
+    }
+  } else {
+    setEmitterParticles(selectedCubeFace, count);
+  }
+}
+
+
+
+void selectLocalMenuItem() {
+  /*    MENU_LOCAL_COLOR,
+    MENU_LOCAL_PARTICLES,
+    MENU_LOCAL_VELOCITY*/
+  return;
+}
+
+void selectMainMenuItem() {
+  return;
+}
+
+///////////////////////////////////////////////
+
+void initGraphics(int argc, char *argv[]) {
+  glutInit(&argc, argv);
+
+  // Spawn a window
+  glutInitWindowSize(WINDOW_WIDTH, WINDOW_HEIGHT);
+  glutInitWindowPosition((glutGet(GLUT_SCREEN_WIDTH) - WINDOW_WIDTH)/2,
+                         (glutGet(GLUT_SCREEN_HEIGHT) - WINDOW_HEIGHT)/2);
+  glutInitDisplayMode(GLUT_DOUBLE | GLUT_DEPTH);
+  glutCreateWindow("COMP37111 Particles");
+
+  // Connect my function
+  glutDisplayFunc(display);
+  glutIdleFunc(idleTick);
+  glutKeyboardFunc(keyboardDown);
+  glutKeyboardUpFunc(keyboardUp);
+  glutReshapeFunc(reshape);
+
+  // Keyboard Functions, derived from:
+  // http://www.swiftless.com/tutorials/opengl/keyboard.html
+  glutSetKeyRepeat(GLUT_KEY_REPEAT_OFF);
+  glutSpecialFunc(keySpecial); //key press
+  glutSpecialUpFunc(keySpecialUp); //key up
+
+  // Sky blue
+  glClearColor(0.53f, 0.808f, 0.98f, 0.0f);
+
+  // Enable depth test
+  glEnable(GL_DEPTH_TEST);
+
+  // Enable color blend for alpha
+  glEnable (GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+
+  // Accept ift closer to the camera
+  glDepthFunc(GL_LESS);
+
+  // Smooth points
+  glEnable(GL_POINT_SMOOTH);
+
+  // Global Bounce
+  int globalBounceMenu = glutCreateMenu( selectGlobalBounce );
+  glutAddMenuEntry("Very Low", 10 );
+  glutAddMenuEntry("Low", 50 );
+  glutAddMenuEntry("Default", 60 );
+  glutAddMenuEntry("High", 75 );
+  glutAddMenuEntry("Very High", 90 );
+
+  // Global Gravity
+  int globalGravityMenu = glutCreateMenu( selectGlobalGravity );
+  glutAddMenuEntry("High Anti-Gravity", 1200 );
+  glutAddMenuEntry("Anti-Gravity", 980 );
+  glutAddMenuEntry("Low Anti-Gravity", 300 );
+  glutAddMenuEntry("Very Low", -100 );
+  glutAddMenuEntry("Low", -300 );
+  glutAddMenuEntry("Default", -980 );
+  glutAddMenuEntry("High", -1200 );
+  glutAddMenuEntry("Very High", -1500 );
+
+  // Global Particle Count
+  int globalParticleMenu = glutCreateMenu( selectGlobalParticles );
+  glutAddMenuEntry("Low", 2000 );
+  glutAddMenuEntry("Medium", 3000 );
+  glutAddMenuEntry("Default", 6000 );
+  glutAddMenuEntry("High", 50000 );
+  glutAddMenuEntry("Very High", 100000 );
+  glutAddMenuEntry("Extreme", 600000 ); // maximum is 100000 per emitter
+
+  // Gravity type
+  int globalGravityTypeMenu = glutCreateMenu( selectGlobalGravityType );
+  glutAddMenuEntry("Euler Simulation", REAL_GRAVITY );
+  glutAddMenuEntry("Verlet Approximation", VERLET_APPROXIMATION );
+
+  // Draw type
+  int globalDrawTypeMenu = glutCreateMenu( selectGlobalDrawType );
+  glutAddMenuEntry("Points", POINT );
+  glutAddMenuEntry("Jitter", JITTER_POINTS );
+  glutAddMenuEntry("Lines", LINES );
+  glutAddMenuEntry("Billboard", BILLBOARD );
+
+  // Global Settings
+  int globalMenu = glutCreateMenu( selectMainMenuItem );
+  glutAddSubMenu("Set Bounce", globalBounceMenu );
+  glutAddSubMenu("Set Gravity", globalGravityMenu );
+  glutAddSubMenu("Set Particles", globalParticleMenu );
+  glutAddSubMenu("Set Simulation Type", globalGravityTypeMenu );
+  glutAddSubMenu("Set Draw Type", globalDrawTypeMenu );
+
+  /////////////
+
+  // Color
+  int localColorMenu = glutCreateMenu( selectLocalColorItem );
+  glutAddMenuEntry("Red", RED );
+  glutAddMenuEntry("Pink", PINK );
+  glutAddMenuEntry("Orange", ORANGE );
+  glutAddMenuEntry("Yellow", YELLOW );
+  glutAddMenuEntry("Green", GREEN );
+  glutAddMenuEntry("Blue", BLUE );
+  glutAddMenuEntry("Indigo", INDIGO );
+  glutAddMenuEntry("Violet", VIOLET );
+  glutAddMenuEntry("While", WHITE );
+  glutAddMenuEntry("Black", BLACK );
+
+  // Color
+  int localParticleMenu = glutCreateMenu( selectLocalParticleItem );
+  glutAddMenuEntry("500", 500 );
+  glutAddMenuEntry("1,000", 1000 );
+  glutAddMenuEntry("5,000", 5000 );
+  glutAddMenuEntry("10,000", 10000 );
+  glutAddMenuEntry("50,000", 50000 );
+  glutAddMenuEntry("100,000", 100000 );
+
+  // Local Settings
+  int localMenu = glutCreateMenu( selectMainMenuItem );
+  glutAddSubMenu("Set Color", localColorMenu );
+  glutAddSubMenu("Set Particles", localParticleMenu );
+  //glutAddMenuEntry("Set Particles", MENU_LOCAL_PARTICLES );
+  //glutAddMenuEntry("Set Velocity", MENU_LOCAL_VELOCITY );
+
+
+  // Create a menu
+  glutCreateMenu( selectMainMenuItem );
+
+  // Add menu items
+  glutAddSubMenu("Global Settings", globalMenu);
+  glutAddSubMenu("Selected Face Settings", localMenu);
+
+  // Associate a mouse button with menu
+  glutAttachMenu(GLUT_RIGHT_BUTTON);
+
+  // Draw (and save on the GPU) the axes and floor
+  makeAxes();
+  makeGridFloor(WORLD_SIZE, FLOOR_HEIGHT);
+  makeCeiling(WORLD_SIZE, CEILING_HEIGHT);
 }
 
 /////////////////////////////////////////////////
@@ -1154,7 +1629,6 @@ int main(int argc, char *argv[]) {
   srand(time(NULL));
 
   createEmitters();
-  return 0;
 
   // Boot the graphics engine
   initGraphics(argc, argv);
