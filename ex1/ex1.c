@@ -96,6 +96,15 @@ typedef enum
     BILLBOARD
 } RENDER_TYPE;
 
+typedef enum
+{
+  WATERFALL,
+  FOUNTAIN,
+  ROCKET,
+  FIRE_EMITTER,
+  DEFAULT
+} PRESET;
+
 ////////////// Structs //////////////
 
 /*
@@ -134,7 +143,7 @@ typedef struct {
   float deadTime;
 
   // how alive
-  //float lifeTime;
+  //char lifeTime;
 
   // Should we draw it?
   int display;
@@ -158,6 +167,8 @@ typedef struct {
   GLfloat yawAngle; // rotation around Y
 
   Vector spawnVelocity;
+
+  float velocityMultiplier;
 
   Particle particles[PARTICLES_PER_EMITTER_LIMIT];
 
@@ -703,9 +714,9 @@ void calculateParticle(Particle *particle, SurfaceEmitter *emitter) {
       particle->position.z = emitter->bottomLeft.z + (emitter->topRight.z - emitter->bottomLeft.z) * randomBetween(0.25,0.75);
 
       // Spawn the particle with the emitters velocity
-      particle->velocity.x = emitter->spawnVelocity.x + randomBetween(-1,1);
-      particle->velocity.y = emitter->spawnVelocity.y + randomBetween(-1,1);
-      particle->velocity.z = emitter->spawnVelocity.z + randomBetween(-1,1);
+      particle->velocity.x = (emitter->spawnVelocity.x * emitter->velocityMultiplier) + randomBetween(-1,1);
+      particle->velocity.y = (emitter->spawnVelocity.y * emitter->velocityMultiplier) + randomBetween(-1,1);
+      particle->velocity.z = (emitter->spawnVelocity.z * emitter->velocityMultiplier) + randomBetween(-1,1);
 
       if(currentGravityType == VERLET_APPROXIMATION) {
 
@@ -874,6 +885,82 @@ void calculateEmitters() {
 ///////////////////////////////////////////////
 
 /**
+ * Set the color of an emitter to a known preset
+ */
+void setEmitterColor(int faceID, COLOR color) {
+  emitters[faceID].r = 0;
+  emitters[faceID].g = 0;
+  emitters[faceID].b = 0;
+
+  switch(color) {
+    case RED:
+      emitters[faceID].r = 1;
+    break;
+
+    case PINK:
+      emitters[faceID].r = 1;
+      emitters[faceID].g = 0.4;
+      emitters[faceID].b = 0.7;
+    break;
+
+    case ORANGE:
+      emitters[faceID].r = 1;
+      emitters[faceID].g = 0.64;
+    break;
+
+    case YELLOW:
+      emitters[faceID].r = 1;
+      emitters[faceID].g = 1;
+    break;
+
+    case GREEN:
+      emitters[faceID].g = 1;
+    break;
+
+    case BLUE:
+      emitters[faceID].b = 1;
+    break;
+
+    case INDIGO:
+      emitters[faceID].r = 0.58;
+      emitters[faceID].b = 0.83;
+    break;
+
+    case VIOLET:
+      emitters[faceID].r = 0.63;
+      emitters[faceID].g = 0.13;
+      emitters[faceID].b = 0.94;
+    break;
+
+    case BLACK:
+    break;
+
+    case WHITE:
+      emitters[faceID].r = 1;
+      emitters[faceID].g = 1;
+      emitters[faceID].b = 1;
+    break;
+  }
+}
+
+/**
+ * Set how many particles to use for an emitter
+ */
+void setEmitterParticles(int faceID, int count) {
+  emitters[faceID].numberOfParticles = count;
+}
+
+/**
+ * Set how fast the emitter should fire out particles
+ */
+void setEmitterVelocityMultiplier(int faceID, float velocity) {
+  emitters[faceID].velocityMultiplier = velocity;
+}
+
+
+///////////////////////////////////////////////
+
+/**
  * Rotate the camera
  *  @param direction definedDirection (UP,LEFT,DOWN,RIGHT)
  */
@@ -994,7 +1081,18 @@ void keyboardDown(int key, int x, int y) {
     printf("Gravity: %f\n", gravityStrength);
     printf("Bounce: %f\n", bounceCoefficient);
     printf("Particle Count: %d\n", currentParticleLimit);
+    printf("Render Type: %d", currentRenderType);
     printf("Gravity Type: %d\n", currentGravityType);
+    printf("Emitter Height: %2.1f\n", emitterYPosition);
+    printf("\n");
+    int i;
+    for (i = 0; i < emitterCount; i++) {
+      printf("= Emitter: %d\n", i);
+      printf("Color: %1.2f %1.2f %1.2f\n", emitters[i].r, emitters[i].g, emitters[i].b);
+      printf("Particles: %d\n", emitters[i].numberOfParticles);
+      printf("Velocity: %d\n", emitters[i].velocityMultiplier);
+      printf("\n\n");
+    }
     printf("\n\n");
   } else {
     keyStates[key] = 1;
@@ -1256,6 +1354,7 @@ void createEmitter(int id) {
   emitters[id].spawnVelocity.y = 0;
   emitters[id].spawnVelocity.z = 0;
   emitters[id].yawAngle = 0;
+  emitters[id].velocityMultiplier = 1;
 
   // Reset all particles
   int i;
@@ -1345,16 +1444,16 @@ void createEmitters() {
 
 /////////////////////////////////////////////////
 
-void selectGlobalBounce(int value) {
+void setGlobalBounce(int value) {
   // Hacky way of handling value
   bounceCoefficient = value / 100.0;
 }
 
-void selectGlobalGravity(int value) {
+void setGravity(int value) {
   gravityStrength = value / 100.0;
 }
 
-void selectGlobalParticles(int value) {
+void setGlobalParticles(int value) {
 
   currentEmitterParticleLimit = value / emitterCount;
   if(currentEmitterParticleLimit > PARTICLES_PER_EMITTER_LIMIT)
@@ -1366,81 +1465,26 @@ void selectGlobalParticles(int value) {
   createEmitters();
 }
 
-void selectGlobalGravityType(int type) {
+void setGlobalGravityType(int type) {
   currentGravityType = type;
 
   // Reset to new gravity
   createEmitters();
 }
 
-void selectGlobalDrawType(int type) {
+void setGlobalDrawType(int type) {
   currentRenderType = type;
 
   // For lines we must be using Verlet
   if(type == LINES) {
     if(currentGravityType != VERLET_APPROXIMATION) {
-      selectGlobalGravityType(VERLET_APPROXIMATION);
+      setGlobalGravityType(VERLET_APPROXIMATION);
     }
   }
 }
 
 /////////
 
-void setEmitterColor(int faceID, COLOR color) {
-  emitters[faceID].r = 0;
-  emitters[faceID].g = 0;
-  emitters[faceID].b = 0;
-
-  switch(color) {
-    case RED:
-      emitters[faceID].r = 1;
-    break;
-
-    case PINK:
-      emitters[faceID].r = 1;
-      emitters[faceID].g = 0.4;
-      emitters[faceID].b = 0.7;
-    break;
-
-    case ORANGE:
-      emitters[faceID].r = 1;
-      emitters[faceID].g = 0.64;
-    break;
-
-    case YELLOW:
-      emitters[faceID].r = 1;
-      emitters[faceID].g = 1;
-    break;
-
-    case GREEN:
-      emitters[faceID].g = 1;
-    break;
-
-    case BLUE:
-      emitters[faceID].b = 1;
-    break;
-
-    case INDIGO:
-      emitters[faceID].r = 0.58;
-      emitters[faceID].b = 0.83;
-    break;
-
-    case VIOLET:
-      emitters[faceID].r = 0.63;
-      emitters[faceID].g = 0.13;
-      emitters[faceID].b = 0.94;
-    break;
-
-    case BLACK:
-    break;
-
-    case WHITE:
-      emitters[faceID].r = 1;
-      emitters[faceID].g = 1;
-      emitters[faceID].b = 1;
-    break;
-  }
-}
 
 void selectLocalColorItem(int color) {
 
@@ -1453,10 +1497,6 @@ void selectLocalColorItem(int color) {
   } else {
     setEmitterColor(selectedCubeFace, color);
   }
-}
-
-void setEmitterParticles(int faceID, int count) {
-  emitters[faceID].numberOfParticles = count;
 }
 
 void selectLocalParticleItem(int count) {
@@ -1472,17 +1512,78 @@ void selectLocalParticleItem(int count) {
   }
 }
 
+void selectLocalVelocityItem(int velocity) {
 
+  float actualVelocity = velocity / 4;
+
+  if(selectedCubeFace < 0) {
+    // Call this function for each face
+    int id;
+    for (id = 0; id < EMITTER_LIMIT; id ++) {
+      setEmitterVelocityMultiplier(id, actualVelocity);
+    }
+  } else {
+    setEmitterVelocityMultiplier(selectedCubeFace, actualVelocity);
+  }
+}
+
+///////////////////////////////////////////////
 
 void selectLocalMenuItem() {
-  /*    MENU_LOCAL_COLOR,
-    MENU_LOCAL_PARTICLES,
-    MENU_LOCAL_VELOCITY*/
   return;
 }
 
 void selectMainMenuItem() {
   return;
+}
+
+///////////////////////////////////////////////
+
+void selectPreset(int preset) {
+  switch (preset) {
+    case WATERFALL:
+      createEmitters();
+      currentGravityType = REAL_GRAVITY;
+      currentRenderType = BILLBOARD;
+      setGravity(-980);
+      setGlobalBounce(10);
+
+      selectedCubeFace = -1;
+      selectLocalColorItem(BLUE);
+      selectLocalParticleItem(0);
+
+      selectedCubeFace = 3;
+      selectLocalParticleItem(100000);
+
+      rotationKeyboardInputReceived = 1;
+      cameraLookYPosition = 0.660000;
+      cameraLoopYAngle = 89.940414;
+      cameraLoopYPosition = -7.890000;
+      cameraDistance = -2.66;
+
+      break;
+
+    case FIRE_EMITTER:
+      setGlobalGravityType(VERLET_APPROXIMATION);
+      setGlobalDrawType(LINES);
+
+      selectedCubeFace = -1;
+      selectLocalColorItem(RED);
+      selectLocalParticleItem(0);
+
+      selectedCubeFace = 5;
+      selectLocalParticleItem(100000);
+
+      emitterYPosition = -11;
+
+      rotationKeyboardInputReceived = 0;
+
+      break;
+
+    case DEFAULT:
+      createEmitters();
+      break;
+  }
 }
 
 ///////////////////////////////////////////////
@@ -1527,7 +1628,7 @@ void initGraphics(int argc, char *argv[]) {
   glEnable(GL_POINT_SMOOTH);
 
   // Global Bounce
-  int globalBounceMenu = glutCreateMenu( selectGlobalBounce );
+  int globalBounceMenu = glutCreateMenu( setGlobalBounce );
   glutAddMenuEntry("Very Low", 10 );
   glutAddMenuEntry("Low", 50 );
   glutAddMenuEntry("Default", 60 );
@@ -1535,7 +1636,7 @@ void initGraphics(int argc, char *argv[]) {
   glutAddMenuEntry("Very High", 90 );
 
   // Global Gravity
-  int globalGravityMenu = glutCreateMenu( selectGlobalGravity );
+  int globalGravityMenu = glutCreateMenu( setGravity );
   glutAddMenuEntry("High Anti-Gravity", 1200 );
   glutAddMenuEntry("Anti-Gravity", 980 );
   glutAddMenuEntry("Low Anti-Gravity", 300 );
@@ -1546,7 +1647,7 @@ void initGraphics(int argc, char *argv[]) {
   glutAddMenuEntry("Very High", -1500 );
 
   // Global Particle Count
-  int globalParticleMenu = glutCreateMenu( selectGlobalParticles );
+  int globalParticleMenu = glutCreateMenu( setGlobalParticles );
   glutAddMenuEntry("Low", 2000 );
   glutAddMenuEntry("Medium", 3000 );
   glutAddMenuEntry("Default", 6000 );
@@ -1555,12 +1656,12 @@ void initGraphics(int argc, char *argv[]) {
   glutAddMenuEntry("Extreme", 600000 ); // maximum is 100000 per emitter
 
   // Gravity type
-  int globalGravityTypeMenu = glutCreateMenu( selectGlobalGravityType );
+  int globalGravityTypeMenu = glutCreateMenu( setGlobalGravityType );
   glutAddMenuEntry("Euler Simulation", REAL_GRAVITY );
   glutAddMenuEntry("Verlet Approximation", VERLET_APPROXIMATION );
 
   // Draw type
-  int globalDrawTypeMenu = glutCreateMenu( selectGlobalDrawType );
+  int globalDrawTypeMenu = glutCreateMenu( setGlobalDrawType );
   glutAddMenuEntry("Points", POINT );
   glutAddMenuEntry("Jitter", JITTER_POINTS );
   glutAddMenuEntry("Lines", LINES );
@@ -1591,6 +1692,7 @@ void initGraphics(int argc, char *argv[]) {
 
   // Color
   int localParticleMenu = glutCreateMenu( selectLocalParticleItem );
+  glutAddMenuEntry("0", 0 );
   glutAddMenuEntry("500", 500 );
   glutAddMenuEntry("1,000", 1000 );
   glutAddMenuEntry("5,000", 5000 );
@@ -1598,13 +1700,27 @@ void initGraphics(int argc, char *argv[]) {
   glutAddMenuEntry("50,000", 50000 );
   glutAddMenuEntry("100,000", 100000 );
 
+  // Velocity
+  int localVelocityMenu = glutCreateMenu( selectLocalVelocityItem );
+  glutAddMenuEntry("Very Low", 1 );
+  glutAddMenuEntry("Low", 2 );
+  glutAddMenuEntry("Medium", 4 );
+  glutAddMenuEntry("High", 8 );
+  glutAddMenuEntry("Very High", 16 );
+
   // Local Settings
   int localMenu = glutCreateMenu( selectMainMenuItem );
   glutAddSubMenu("Set Color", localColorMenu );
   glutAddSubMenu("Set Particles", localParticleMenu );
-  //glutAddMenuEntry("Set Particles", MENU_LOCAL_PARTICLES );
-  //glutAddMenuEntry("Set Velocity", MENU_LOCAL_VELOCITY );
+  glutAddSubMenu("Set Velocity", localVelocityMenu );
 
+  //////////////
+
+  int globalPresetMenu = glutCreateMenu( selectPreset );
+  glutAddMenuEntry("Waterfall", WATERFALL );
+  glutAddMenuEntry("Fire Emitter", FIRE_EMITTER );
+  //glutAddMenuEntry("Lines", LINES );
+  //glutAddMenuEntry("Billboard", BILLBOARD );
 
   // Create a menu
   glutCreateMenu( selectMainMenuItem );
@@ -1612,6 +1728,7 @@ void initGraphics(int argc, char *argv[]) {
   // Add menu items
   glutAddSubMenu("Global Settings", globalMenu);
   glutAddSubMenu("Selected Face Settings", localMenu);
+  glutAddSubMenu("Preset", globalPresetMenu );
 
   // Associate a mouse button with menu
   glutAttachMenu(GLUT_RIGHT_BUTTON);
