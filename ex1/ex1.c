@@ -31,7 +31,7 @@
 #define EMITTER_LIMIT 6
 
 /* Particles/emiter limit */
-#define PARTICLES_PER_EMITTER_LIMIT 100000
+#define PARTICLES_PER_EMITTER_LIMIT 165000
 #define DEFAULT_PARTICLE_LIMIT 6000
 
 /* Define Some Keys */
@@ -105,6 +105,11 @@ typedef enum
   DEFAULT
 } PRESET;
 
+typedef enum
+{
+	TOGGLE_FLOOR
+} MAIN_MENU;
+
 ////////////// Structs //////////////
 
 /*
@@ -131,6 +136,7 @@ typedef struct PositionNode {
 typedef struct {
   GLfloat r, g, b; // colour
   GLfloat alpha; // how transparent
+
   Vector position; // current position
   Vector previousPosition; // last frame position
   Vector velocity; //current velocity
@@ -143,7 +149,7 @@ typedef struct {
   float deadTime;
 
   // how alive
-  char lifeTime;
+  float lifeTime;
 
   // Should we draw it?
   int display;
@@ -171,6 +177,8 @@ typedef struct {
   float velocityMultiplier;
 
   Particle particles[PARTICLES_PER_EMITTER_LIMIT];
+
+  int particleLifeTime;
 
   int numberOfParticles;
 } SurfaceEmitter;
@@ -222,9 +230,11 @@ int lastFrameTime = 0;
 
 /* How many second each frame represents (usually less than 1) */
 float deltaTime = 0.001;
+float deltaTimeSpeed = deltaTime;
 
 /* How strong is gravity at the moment */
 float gravityStrength = GRAVITY_STRENGTH;
+int gravity = 1;
 
 /* How bouncy is the floor? */
 float bounceCoefficient = BOUNCE_COEFFICIENT;
@@ -239,6 +249,7 @@ int currentParticleLimit = DEFAULT_PARTICLE_LIMIT;
 int paused = 0;
 float speed = 1;
 int selectedCubeFace = -1;
+int drawFloor = 1;
 
 RENDER_TYPE currentRenderType = POINT;
 
@@ -260,7 +271,8 @@ double randomMax(double max) {
 }
 
 double randomNumber() {
-  return randomMax(1);
+  return (rand() / (double) RAND_MAX);
+  //return randomMax(1); // replaced for speed
 }
 
 /////////////// Main Draw ///////////////////
@@ -597,11 +609,13 @@ void display() {
   // Set the camera position
   positionCamera();
 
-  // Draw the ceiling
-  glCallList(ceilingListID);
+  if(drawFloor) {
+	  // Draw the ceiling
+	  glCallList(ceilingListID);
 
-  // Draw the floor
-  glCallList(gridFloorListID);
+	  // Draw the floor
+	  glCallList(gridFloorListID);
+  }
 
   // If enabled, draw coordinate axis
   if (axisEnabled)
@@ -680,7 +694,166 @@ void calculateFPS() {
   // Delta time is used for physics
   deltaTime = timeSinceLastFrameMS / (1000.0f);
 
+  // Delete time speed is used for physics that takes into account the current speed
+  deltaTimeSpeed = deltaTime * speed;
+
   lastFrameTime = currentTime;
+}
+
+void respawnParticle(Particle *particle, SurfaceEmitter *emitter) {
+  // Spawn in a random xyz between top left and bottom right of the emitter
+  particle->position.x = emitter->bottomLeft.x + (emitter->topRight.x - emitter->bottomLeft.x) * randomBetween(0.25,0.75);
+  particle->position.y = emitter->bottomLeft.y + (emitter->topRight.y - emitter->bottomLeft.y) * randomBetween(0.25,0.75);
+  particle->position.z = emitter->bottomLeft.z + (emitter->topRight.z - emitter->bottomLeft.z) * randomBetween(0.25,0.75);
+
+  // Spawn the particle with the emitters velocity
+  particle->velocity.x = (emitter->spawnVelocity.x * emitter->velocityMultiplier) + randomBetween(-1,1);
+  particle->velocity.y = (emitter->spawnVelocity.y * emitter->velocityMultiplier) + randomBetween(-1,1);
+  particle->velocity.z = (emitter->spawnVelocity.z * emitter->velocityMultiplier) + randomBetween(-1,1);
+
+  // If we're using verlet we need to set the previous position
+  if(currentGravityType == VERLET_APPROXIMATION) {
+
+	// Add default velocity
+	particle->previousPosition.x = particle->position.x - (particle->velocity.x * 0.05);
+	particle->previousPosition.y = particle->position.y - (particle->velocity.y * 0.05);
+	particle->previousPosition.z = particle->position.z - (particle->velocity.z * 0.05);
+
+  }
+
+  // Colliding
+  particle->yCollision = 0;
+
+  // Particle is "alive"
+  particle->dead = 0;
+  particle->deadTime = 0;
+  particle->display = 1;
+  particle->lifeTime = 0;
+
+  // Color
+  if(emitter->r > 0) particle->r = emitter->r + randomBetween(-0.1,0.1);
+  else particle->r = randomMax(0.75);
+
+  if(emitter->g > 0) particle->g = emitter->g + randomBetween(-0.1,0.1);
+  else particle->g = randomMax(0.75);
+
+  if(emitter->b > 0) particle->b = emitter->b + randomBetween(-0.1,0.1);
+  else particle->b = randomMax(0.75);
+
+  // Alpha
+  particle->alpha = 0.75 + randomBetween(-0.5,0.5);
+  if(particle->alpha > 1)
+	particle->alpha = 1;
+}
+
+void handleCollisions(Particle *particle) {
+
+	// If we are below the floor, or above the "ceiling"
+	if (!particle->yCollision && (particle->position.y <= FLOOR_HEIGHT || particle->position.y >= CEILING_HEIGHT)) { // floor
+
+	  if(currentGravityType == REAL_GRAVITY) {
+		particle->velocity.y *= -bounceCoefficient - randomBetween(0, 0.15); // bounce (lose velocity) and go the other way
+
+		// The floor is a bit bumpy, occasionally add other forces
+		if (randomNumber() < 0.25)
+		  particle->velocity.x += randomBetween(-0.5,0.5);
+		if (randomNumber() < 0.25)
+		  particle->velocity.z += randomBetween(-0.5,0.5);
+
+	  } else if(currentGravityType == VERLET_APPROXIMATION) {
+
+		// Swap the particles position in y (go back the other way)
+		Vector temp = particle->previousPosition;
+		particle->previousPosition.y = particle->position.y;
+
+		// Dampen the velocity slightly when swapping
+		particle->position.y += (temp.y - particle->position.y) * bounceCoefficient;
+
+	  }
+	  particle->yCollision = 1;
+
+	}
+	// If we're clear of the floor
+	else if (particle->position.y > FLOOR_HEIGHT && particle->position.y < CEILING_HEIGHT) {
+	  particle->yCollision = 0;
+
+	}
+	// Particle below floor (or above ceiling) and currently colliding
+	else {
+
+	  if(currentGravityType == REAL_GRAVITY) {
+		// Delete the particle it's below the floor
+		if (particle->position.y <= FLOOR_HEIGHT + 0.01 && particle->velocity.y <= 0.01) {
+		  particle->dead = 1;
+		}
+		// Delete the particle if it's above the ceiling
+		else if(particle->position.y >= CEILING_HEIGHT - 0.01 && particle->velocity.y >= -0.01) {
+		  particle->dead = 1;
+		}
+	  } else if(currentGravityType == VERLET_APPROXIMATION) {
+		// Delete the particle it's below the floor and not moving
+		if (particle->position.y <= FLOOR_HEIGHT + 0.01 && particle->position.y - particle->previousPosition.y  <= 0.05) {
+		  particle->dead = 1;
+		}
+		// Delete the particle if it's above the ceiling
+		else if(particle->position.y >= CEILING_HEIGHT - 0.01 && particle->position.y - particle->previousPosition.y >= -0.05) {
+		  particle->dead = 1;
+		}
+	  }
+
+	}
+}
+
+/**
+ * Handle the movement of a particle according to gravity
+ */
+void handleMovement(Particle *particle, float deltaTimeSpeed) {
+
+	// Increase the life of the particle
+	particle->lifeTime += deltaTimeSpeed;
+
+	// Drag
+	particle->velocity.x *= 1 - (deltaTimeSpeed * 0.01); // drag
+	particle->velocity.y *= 1 - (deltaTimeSpeed * 0.01); // drag
+	particle->velocity.z *= 1 - (deltaTimeSpeed * 0.01); // drag
+
+	if(currentGravityType == REAL_GRAVITY) {
+
+	  // Movement in X
+	  particle->position.x = particle->position.x + particle->velocity.x * deltaTimeSpeed;
+
+	  if(gravity) {
+		  // Movement in Y (+ gravity)
+		  particle->velocity.y = particle->velocity.y + gravityStrength * deltaTimeSpeed / 2; // gravity #1
+		  particle->position.y = particle->position.y + particle->velocity.y * deltaTimeSpeed; // update position
+		  particle->velocity.y = particle->velocity.y + gravityStrength * deltaTimeSpeed / 2; // gravity #2
+	  } else {
+		  particle->position.y = particle->position.y + particle->velocity.y * deltaTimeSpeed;
+	  }
+
+	  // Movement in Z
+	  particle->position.z = particle->position.z + particle->velocity.z * deltaTimeSpeed;
+
+	}
+	else if(currentGravityType == VERLET_APPROXIMATION) {
+
+	  Vector temp = particle->position;
+
+	  //P.Position += P.Position - P.OldPosition + P.Acceleration*Timestep*Timestep;
+	  particle->position.x += particle->position.x - particle->previousPosition.x;
+	  if(gravity) {
+		  particle->position.y += particle->position.y - particle->previousPosition.y + gravityStrength * 0.001; // Fixed gravity effect
+	  } else {
+		  particle->position.y += particle->position.y - particle->previousPosition.y;
+	  }
+	  particle->position.z += particle->position.z - particle->previousPosition.z;
+
+	  // Store previous position
+	  particle->previousPosition.x = temp.x;
+	  particle->previousPosition.y = temp.y;
+	  particle->previousPosition.z = temp.z;
+
+	}
 }
 
 /**
@@ -689,163 +862,34 @@ void calculateFPS() {
 void calculateParticle(Particle *particle, SurfaceEmitter *emitter) {
 
   // Data time, taking into account requested speed
-  float deltaTimeSpeed = deltaTime * speed;
+  // float deltaTimeSpeed = deltaTime * speed;
 
   // If the particle has been killed
   if(particle->dead) {
 
     // Respawn them here
-    if((particle->firstSpawn || particle->deadTime > 5) && randomNumber() < 0.001) {
-
-      // Store the particles previous position
-      /*PositionNode* newPositionsRoot = malloc(sizeof(struct PositionNode));
-      if (newPositionsRoot == 0) {
-        fprintf(stderr, "Out of memory" );
-        return;
-      }
-      newPositionsRoot->position.x = particle->position.x;
-      newPositionsRoot->position.y = particle->position.y;
-      newPositionsRoot->position.z = particle->position.z;
-      newPositionsRoot->next = particle->previousPositions; // old root*/
-
-      // Spawn in a random xyz between top left and bottom right
-      particle->position.x = emitter->bottomLeft.x + (emitter->topRight.x - emitter->bottomLeft.x) * randomBetween(0.25,0.75);
-      particle->position.y = emitter->bottomLeft.y + (emitter->topRight.y - emitter->bottomLeft.y) * randomBetween(0.25,0.75);
-      particle->position.z = emitter->bottomLeft.z + (emitter->topRight.z - emitter->bottomLeft.z) * randomBetween(0.25,0.75);
-
-      // Spawn the particle with the emitters velocity
-      particle->velocity.x = (emitter->spawnVelocity.x * emitter->velocityMultiplier) + randomBetween(-1,1);
-      particle->velocity.y = (emitter->spawnVelocity.y * emitter->velocityMultiplier) + randomBetween(-1,1);
-      particle->velocity.z = (emitter->spawnVelocity.z * emitter->velocityMultiplier) + randomBetween(-1,1);
-
-      if(currentGravityType == VERLET_APPROXIMATION) {
-
-        // Add default velocity
-        particle->previousPosition.x = particle->position.x - particle->velocity.x * deltaTimeSpeed;
-        particle->previousPosition.y = particle->position.y - particle->velocity.y * deltaTimeSpeed;
-        particle->previousPosition.z = particle->position.z - particle->velocity.z * deltaTimeSpeed;
-
-      }
-
-      // Colliding
-      particle->yCollision = 0;
-
-      // Particle is "alive"
-      particle->dead = 0;
-      particle->deadTime = 0;
-      particle->display = 1;
-
-      // Color
-      if(emitter->r > 0) particle->r = emitter->r + randomBetween(-0.1,0.1);
-      else particle->r = randomMax(0.75);
-
-      if(emitter->g > 0) particle->g = emitter->g + randomBetween(-0.1,0.1);
-      else particle->g = randomMax(0.75);
-
-      if(emitter->b > 0) particle->b = emitter->b + randomBetween(-0.1,0.1);
-      else particle->b = randomMax(0.75);
-
-      // Alpha
-      particle->alpha = 0.75 + randomBetween(-0.5,0.5);
-      if(particle->alpha > 1)
-        particle->alpha = 1;
-
+    if(randomNumber() < 0.001) {
+      respawnParticle(particle, emitter);
     } else {
       particle->deadTime += deltaTimeSpeed;
+      particle->lifeTime += deltaTimeSpeed;
     }
 
   }
   // Particle is alive
   else {
 
-    // Drag
-    particle->velocity.x *= 1 - (deltaTimeSpeed * 0.01); // drag
-    particle->velocity.y *= 1 - (deltaTimeSpeed * 0.01); // drag
-    particle->velocity.z *= 1 - (deltaTimeSpeed * 0.01); // drag
+	// Gravity and velocity
+	handleMovement(particle, deltaTimeSpeed);
 
-    if(currentGravityType == REAL_GRAVITY) {
-
-      // Movement in X
-      particle->position.x = particle->position.x + particle->velocity.x * deltaTimeSpeed;
-
-      // Movement in Y (+ gravity)
-      particle->velocity.y = particle->velocity.y + gravityStrength * deltaTimeSpeed / 2; // gravity #1
-      particle->position.y = particle->position.y + particle->velocity.y * deltaTimeSpeed; // update position
-      particle->velocity.y = particle->velocity.y + gravityStrength * deltaTimeSpeed / 2; // gravity #2
-
-      // Movement in Z
-      particle->position.z = particle->position.z + particle->velocity.z * deltaTimeSpeed;
-
-    }
-    else if(currentGravityType == VERLET_APPROXIMATION) {
-
-      Vector temp = particle->position;
-
-      //P.Position += P.Position - P.OldPosition + P.Acceleration*Timestep*Timestep;
-      particle->position.x += particle->position.x - particle->previousPosition.x;
-      particle->position.y += particle->position.y - particle->previousPosition.y + gravityStrength * 0.001; // Fixed gravity effect
-      particle->position.z += particle->position.z - particle->previousPosition.z;
-
-      // Store previous position
-      particle->previousPosition.x = temp.x;
-      particle->previousPosition.y = temp.y;
-      particle->previousPosition.z = temp.z;
-
+    // If its life is over force a respawn skipping "dead"
+    if(particle->lifeTime > emitter->particleLifeTime && randomNumber() > 0.9) {
+    	respawnParticle(particle, emitter);
     }
 
-    // If we are below the floor, or above the "ceiling"
-    if (!particle->yCollision && (particle->position.y <= FLOOR_HEIGHT || particle->position.y >= CEILING_HEIGHT)) { // floor
-
-      if(currentGravityType == REAL_GRAVITY) {
-        particle->velocity.y *= -bounceCoefficient - randomBetween(0, 0.15); // bounce (lose velocity) and go the other way
-
-        // The floor is a bit bumpy, occasionally add other forces
-        if (randomNumber() < 0.25)
-          particle->velocity.x += randomBetween(-0.5,0.5);
-        if (randomNumber() < 0.25)
-          particle->velocity.z += randomBetween(-0.5,0.5);
-
-      } else if(currentGravityType == VERLET_APPROXIMATION) {
-
-        // Swap the particles position in y (go back the other way)
-        Vector temp = particle->previousPosition;
-        particle->previousPosition.y = particle->position.y;
-
-        // Dampen the velocity slightly when swapping
-        particle->position.y += (temp.y - particle->position.y) * bounceCoefficient;
-
-      }
-      particle->yCollision = 1;
-
-    }
-    // If we're clear of the floor
-    else if (particle->position.y > FLOOR_HEIGHT && particle->position.y < CEILING_HEIGHT) {
-      particle->yCollision = 0;
-
-    }
-    // Particle below floor (or above ceiling) and currently colliding
-    else {
-
-      if(currentGravityType == REAL_GRAVITY) {
-        // Delete the particle it's below the floor
-        if (particle->position.y <= FLOOR_HEIGHT + 0.01 && particle->velocity.y <= 0.01) {
-          particle->dead = 1;
-        }
-        // Delete the particle if it's above the ceiling
-        else if(particle->position.y >= CEILING_HEIGHT - 0.01 && particle->velocity.y >= -0.01) {
-          particle->dead = 1;
-        }
-      } else if(currentGravityType == VERLET_APPROXIMATION) {
-        // Delete the particle it's below the floor and not moving
-        if (particle->position.y <= FLOOR_HEIGHT + 0.01 && particle->position.y - particle->previousPosition.y  <= 0.01) {
-          particle->dead = 1;
-        }
-        // Delete the particle if it's above the ceiling
-        else if(particle->position.y >= CEILING_HEIGHT - 0.01 && particle->position.y - particle->previousPosition.y >= -0.01) {
-          particle->dead = 1;
-        }
-      }
-
+    // If the floor and ceiling exist
+    if(drawFloor) {
+    	handleCollisions(particle);
     }
 
   } // particle alive
@@ -1241,47 +1285,6 @@ void makeAxes() {
  * Create a display list for drawing the floor
  * Tweaked from ex1 of COMP27112 by Toby Howard
  */
-/*void makeGridFloor(int size, int yPos) {
-  // Move the floor very slightly further down, so objects "on the floor" are slightly above it
-  yPos -= 0.001;
-
-  // Create a display list for the floor
-  gridFloorListID = glGenLists(2);
-  glNewList(gridFloorListID, GL_COMPILE);
-
-    // Draw a grey floor
-    glDepthRange(0.1, 1.0);
-    glColor3f(0.4, 0.4, 0.4);
-    glBegin(GL_QUADS);
-      glVertex3f(-size, yPos, size);
-      glVertex3f(size, yPos, size);
-      glVertex3f(size, yPos, -size);
-      glVertex3f(-size, yPos, -size);
-    glEnd();
-
-    // Draw grid lines on the floor
-    glDepthRange(0.0, 0.9);
-    glColor3f(0.2, 0.2, 0.2);
-    glLineWidth(1.0);
-    glBegin(GL_LINES);
-    int x, z;
-    for (x = -size; x <= size; x++) {
-      glVertex3f((GLfloat) x, yPos + 2, -size);
-      glVertex3f((GLfloat) x, yPos + 2, size);
-    }
-    for (z = -size; z <= size; z++) {
-      glVertex3f(-size, yPos + 2, (GLfloat) z);
-      glVertex3f(size, yPos + 2, (GLfloat) z);
-    }
-    glEnd();
-
-  glEndList();
-}*/
-
-/**
- * Create a display list for drawing the floor
- * Tweaked from ex1 of COMP27112 by Toby Howard
- */
 void makeGridFloor(int size, int yPos) {
   // Move the floor very slightly further down, so objects "on the floor" are slightly above it
   yPos -= 0.002;
@@ -1355,6 +1358,7 @@ void createEmitter(int id) {
   emitters[id].spawnVelocity.z = 0;
   emitters[id].yawAngle = 0;
   emitters[id].velocityMultiplier = 1;
+  emitters[id].particleLifeTime = 20;
 
   // Reset all particles
   int i;
@@ -1363,6 +1367,7 @@ void createEmitter(int id) {
     emitters[id].particles[i].deadTime = 0;
     emitters[id].particles[i].firstSpawn = 1;
     emitters[id].particles[i].display = 0;
+    emitters[id].particles[i].lifeTime = 0;
   }
 
   // Set our current limit
@@ -1450,7 +1455,14 @@ void setGlobalBounce(int value) {
 }
 
 void setGravity(int value) {
-  gravityStrength = value / 100.0;
+  if(value == 0) {
+	  gravity = 0;
+	  //gravityStrength = 0;
+  } else {
+	  gravity = 1;
+	  gravityStrength = value / 100.0;
+  }
+
 }
 
 void setGlobalParticles(int value) {
@@ -1459,10 +1471,15 @@ void setGlobalParticles(int value) {
   if(currentEmitterParticleLimit > PARTICLES_PER_EMITTER_LIMIT)
      currentEmitterParticleLimit = PARTICLES_PER_EMITTER_LIMIT;
 
-  currentParticleLimit = currentEmitterParticleLimit * emitterCount;
-
   // Reset all emitters with new limit
   createEmitters();
+
+  currentParticleLimit = 0;
+  int i;
+  for(i = 0; i < emitterCount; i++) {
+	  emitters[i].numberOfParticles = currentEmitterParticleLimit;
+	  currentParticleLimit += emitters[i].numberOfParticles;
+  }
 }
 
 void setGlobalGravityType(int type) {
@@ -1485,6 +1502,18 @@ void setGlobalDrawType(int type) {
 
 /////////
 
+void selectLocalLifetime(int lifetime) {
+
+  if(selectedCubeFace < 0) {
+	// Call this function for each face
+	int id;
+	for (id = 0; id < EMITTER_LIMIT; id ++) {
+	  emitters[id].particleLifeTime = lifetime;
+	}
+  } else {
+	  emitters[selectedCubeFace].particleLifeTime = lifetime;
+  }
+}
 
 void selectLocalColorItem(int color) {
 
@@ -1533,7 +1562,11 @@ void selectLocalMenuItem() {
   return;
 }
 
-void selectMainMenuItem() {
+void selectMainMenuItem(int item) {
+  if(item == TOGGLE_FLOOR) {
+	  drawFloor = !drawFloor;
+	  createEmitters();
+  }
   return;
 }
 
@@ -1640,6 +1673,7 @@ void initGraphics(int argc, char *argv[]) {
   glutAddMenuEntry("High Anti-Gravity", 1200 );
   glutAddMenuEntry("Anti-Gravity", 980 );
   glutAddMenuEntry("Low Anti-Gravity", 300 );
+  glutAddMenuEntry("Off", 0);
   glutAddMenuEntry("Very Low", -100 );
   glutAddMenuEntry("Low", -300 );
   glutAddMenuEntry("Default", -980 );
@@ -1653,7 +1687,8 @@ void initGraphics(int argc, char *argv[]) {
   glutAddMenuEntry("Default", 6000 );
   glutAddMenuEntry("High", 50000 );
   glutAddMenuEntry("Very High", 100000 );
-  glutAddMenuEntry("Extreme", 600000 ); // maximum is 100000 per emitter
+  glutAddMenuEntry("Extreme", 600000 );
+  glutAddMenuEntry("Incredible", 990000 ); // maximum is 165000 per emitter
 
   // Gravity type
   int globalGravityTypeMenu = glutCreateMenu( setGlobalGravityType );
@@ -1674,6 +1709,7 @@ void initGraphics(int argc, char *argv[]) {
   glutAddSubMenu("Set Particles", globalParticleMenu );
   glutAddSubMenu("Set Simulation Type", globalGravityTypeMenu );
   glutAddSubMenu("Set Draw Type", globalDrawTypeMenu );
+  glutAddMenuEntry("Toggle Floor", TOGGLE_FLOOR );
 
   /////////////
 
@@ -1699,6 +1735,7 @@ void initGraphics(int argc, char *argv[]) {
   glutAddMenuEntry("10,000", 10000 );
   glutAddMenuEntry("50,000", 50000 );
   glutAddMenuEntry("100,000", 100000 );
+  glutAddMenuEntry("Max", PARTICLES_PER_EMITTER_LIMIT );
 
   // Velocity
   int localVelocityMenu = glutCreateMenu( selectLocalVelocityItem );
@@ -1708,11 +1745,23 @@ void initGraphics(int argc, char *argv[]) {
   glutAddMenuEntry("High", 8 );
   glutAddMenuEntry("Very High", 16 );
 
+  // Lifetime
+  int localLifetimeMenu = glutCreateMenu( selectLocalLifetime );
+  glutAddMenuEntry("1 Second", 1 );
+  glutAddMenuEntry("5 Seconds", 5 );
+  glutAddMenuEntry("10 Seconds", 10 );
+  glutAddMenuEntry("20 Seconds", 20 );
+  glutAddMenuEntry("30 Seconds", 30 );
+  glutAddMenuEntry("60 Seconds", 60 );
+
+
   // Local Settings
   int localMenu = glutCreateMenu( selectMainMenuItem );
   glutAddSubMenu("Set Color", localColorMenu );
   glutAddSubMenu("Set Particles", localParticleMenu );
   glutAddSubMenu("Set Velocity", localVelocityMenu );
+  glutAddSubMenu("Set Lifetime", localLifetimeMenu );
+
 
   //////////////
 
