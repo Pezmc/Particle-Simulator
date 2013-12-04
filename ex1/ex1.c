@@ -3,7 +3,7 @@
 // by Arturs Bekasovs and Toby Howard
 //
 // Goal: Draws a particle emitter simulating a waterfall
-// New Goal: Draw a cube with particles emmitting from every side
+// Extended Goal: Create a cube where you can configure each face as an emitter
 //
 // Distance is in meters
 // Speed is in meters per second
@@ -57,7 +57,7 @@ typedef enum
     REAL_GRAVITY
 } GRAVITY_TYPE;
 
-/* Items in my menu */
+/* Items in my menus */
 typedef enum
 {
     MENU_GLOBAL_SETTINGS,
@@ -79,9 +79,6 @@ typedef enum
     MENU_LOCAL_VELOCITY
 } MENU_LOCAL_TYPE;
 
-// Assign a default value
-MENU_MAIN_TYPE CURRENT_MENU_SHOW = MENU_GLOBAL_SETTINGS;
-
 // Colors
 typedef enum
 {
@@ -102,6 +99,7 @@ typedef enum
   FOUNTAIN,
   ROCKET,
   FIRE_EMITTER,
+  SNOW,
   DEFAULT
 } PRESET;
 
@@ -230,7 +228,7 @@ int lastFrameTime = 0;
 
 /* How many second each frame represents (usually less than 1) */
 float deltaTime = 0.001;
-float deltaTimeSpeed = deltaTime;
+float deltaTimeSpeed = 0.001;
 
 /* How strong is gravity at the moment */
 float gravityStrength = GRAVITY_STRENGTH;
@@ -251,6 +249,7 @@ float speed = 1;
 int selectedCubeFace = -1;
 int drawFloor = 1;
 
+/* How are we rendering our points? */
 RENDER_TYPE currentRenderType = POINT;
 
 /* What gravity type are we using? */
@@ -266,10 +265,17 @@ double randomBetween(double min, double max) {
   return (rand() / (double) RAND_MAX) * range + min;
 }
 
+/**
+ * Return a random number between 0 and max
+ */
 double randomMax(double max) {
-  return randomBetween(0,max);
+  return (rand() / (double) RAND_MAX) * max;
+  //return randomBetween(0,max); // replaced for speed
 }
 
+/**
+ * Return a random number between 0 and 1
+ */
 double randomNumber() {
   return (rand() / (double) RAND_MAX);
   //return randomMax(1); // replaced for speed
@@ -291,7 +297,7 @@ void drawJitterPointParticle(Particle particle) {
     int i;
     for (i = 0; i < 10; i++) {
       glColor3f(particle.r + randomBetween(-0.1,0.1), particle.g + randomBetween(-0.1,0.1), particle.b + randomBetween(-0.1,0.1)); // color
-      glVertex3f(particle.position.x + randomBetween(-0.5,0.5), particle.position.y + randomBetween(-0.5,0.5), particle.position.z + randomBetween(-0.5,0.5));
+      glVertex3f(particle.position.x + randomBetween(-0.1,0.1), particle.position.y + randomBetween(-0.1,0.1), particle.position.z + randomBetween(-0.1,0.1));
     }
   glEnd();
 }
@@ -314,6 +320,7 @@ void drawBillboard(Particle particle) {
 
 }
 
+/* Draw a particle as a line from its previous position */
 void drawLine(Particle particle) {
 
   glLineWidth(3);
@@ -333,6 +340,8 @@ void drawParticles(SurfaceEmitter emitter) {
   // Draw each particle for the emitter
   int i;
 
+  // Choose the appropriate render type
+  // The display check is here to avoid calling an unneeded function
   if (currentRenderType == POINT) {
     for (i = 0; i < emitter.numberOfParticles; i++) {
       if(emitter.particles[i].display)
@@ -364,7 +373,9 @@ void drawParticles(SurfaceEmitter emitter) {
 
 }
 
-/* Draw all the emitters on the screen */
+/**
+ * Draw all the emitters on the screen
+ */
 int blink = 0;
 void drawEmitters() {
   int i;
@@ -462,6 +473,7 @@ void drawString(void *font, float x, float y, char *str) {
  * Draw a cube out of 6 surfaces
  * Each with a unique color
  * @param size How large the cube should be in OpenGL units
+ * @abstracted from http://www.cl.cam.ac.uk/~cs448/git/trunk/src/progs/osdemos/ostest1.c
  */
 void drawCube(int size) {
   // Half the requested size
@@ -665,6 +677,7 @@ void display() {
  * - lastFrameTime
  * - deltaTime
  * - currentTime
+ * Based on: http://gamedev.stackexchange.com/questions/9945/constant-game-speed-independent-of-variable-fps-in-opengl-with-glut
  */
 void calculateFPS() {
   //  Increase frame count
@@ -700,7 +713,11 @@ void calculateFPS() {
   lastFrameTime = currentTime;
 }
 
+/**
+ * Respawn a dead particle
+ */
 void respawnParticle(Particle *particle, SurfaceEmitter *emitter) {
+
   // Spawn in a random xyz between top left and bottom right of the emitter
   particle->position.x = emitter->bottomLeft.x + (emitter->topRight.x - emitter->bottomLeft.x) * randomBetween(0.25,0.75);
   particle->position.y = emitter->bottomLeft.y + (emitter->topRight.y - emitter->bottomLeft.y) * randomBetween(0.25,0.75);
@@ -746,6 +763,9 @@ void respawnParticle(Particle *particle, SurfaceEmitter *emitter) {
 	particle->alpha = 1;
 }
 
+/**
+ * Handle collisions with the ceiling or floor
+ */
 void handleCollisions(Particle *particle) {
 
 	// If we are below the floor, or above the "ceiling"
@@ -1080,6 +1100,8 @@ void specialKeys(int key, int x, int y) {
 } // cursor_keys()
 
 ////////////// Keyboard Handling ////////////////
+// Key handling based on Article
+// http://www.swiftless.com/tutorials/opengl/keyboard.html
 
 /* Arrays for current key state */
 int keyStates[255]; // Create an array of boolean values of length 255 (0-254)
@@ -1134,7 +1156,7 @@ void keyboardDown(int key, int x, int y) {
       printf("= Emitter: %d\n", i);
       printf("Color: %1.2f %1.2f %1.2f\n", emitters[i].r, emitters[i].g, emitters[i].b);
       printf("Particles: %d\n", emitters[i].numberOfParticles);
-      printf("Velocity: %d\n", emitters[i].velocityMultiplier);
+      printf("Velocity: %2.1f\n", emitters[i].velocityMultiplier);
       printf("\n\n");
     }
     printf("\n\n");
@@ -1186,7 +1208,6 @@ void keyboardOperations(void) {
     }
   }
 }
-
 
 /* Arrays for current key state */
 int keySpecialStates[246]; // Create an array of boolean values of length 246 (0-245)
@@ -1261,6 +1282,7 @@ void reshape(int width, int height) {
 
 /**
  * Create a display list for drawing coord axis
+ * Based on code from 2nd year
  */
 void makeAxes() {
 
@@ -1322,6 +1344,9 @@ void makeGridFloor(int size, int yPos) {
   glEndList();
 }
 
+/**
+ * Based on the above function for drawing the roof
+ */
 void makeCeiling(int size, int yPos) {
   // Create a display list for the ceiling
   ceilingListID = glGenLists(3);
@@ -1342,6 +1367,9 @@ void makeCeiling(int size, int yPos) {
 
 ///////////////////////////////////////////////
 
+/**
+ * Generate an emitter based on the ID
+ */
 void createEmitter(int id) {
   // Defaults
   emitters[id].r = 0;
@@ -1437,6 +1465,9 @@ void createEmitter(int id) {
 
 }
 
+/**
+ * Create all the emitters
+ */
 void createEmitters() {
 
   int e;
@@ -1444,7 +1475,26 @@ void createEmitters() {
   for(e = 0; e < emitterCount; e++) {
     createEmitter(e);
   }
-  //emitterCount = 6;
+}
+
+/**
+ * Reset (most) options to default
+ */
+void reset() {
+	speed = 1;
+	currentEmitterParticleLimit = 1000;
+	currentParticleLimit = DEFAULT_PARTICLE_LIMIT;
+	paused = 0;
+	speed = 1;
+	selectedCubeFace = -1;
+	drawFloor = 1;
+
+    currentGravityType = REAL_GRAVITY;
+    currentRenderType = POINT;
+    setGravity(-980);
+    setGlobalBounce(60);
+
+	createEmitters();
 }
 
 /////////////////////////////////////////////////
@@ -1575,15 +1625,15 @@ void selectMainMenuItem(int item) {
 void selectPreset(int preset) {
   switch (preset) {
     case WATERFALL:
-      createEmitters();
-      currentGravityType = REAL_GRAVITY;
+      reset();
       currentRenderType = BILLBOARD;
-      setGravity(-980);
       setGlobalBounce(10);
 
       selectedCubeFace = -1;
       selectLocalColorItem(BLUE);
       selectLocalParticleItem(0);
+
+      speed = 0.5;
 
       selectedCubeFace = 3;
       selectLocalParticleItem(100000);
@@ -1597,6 +1647,8 @@ void selectPreset(int preset) {
       break;
 
     case FIRE_EMITTER:
+      reset();
+
       setGlobalGravityType(VERLET_APPROXIMATION);
       setGlobalDrawType(LINES);
 
@@ -1610,6 +1662,38 @@ void selectPreset(int preset) {
       emitterYPosition = -11;
 
       rotationKeyboardInputReceived = 0;
+      cameraLookYPosition = 2.279999;
+      cameraLoopYAngle = 369.119629;
+      cameraLoopYPosition = -9.000000;
+      cameraDistance = -1.229999;
+
+
+      break;
+
+    case SNOW:
+      createEmitters();
+      emitterYPosition = 30;
+
+	  cameraLookYPosition = 2.279999;
+	  cameraLoopYAngle = 89.940414;
+	  cameraLoopYPosition = -9.000000;
+	  cameraDistance = -13.000000;
+
+      setGlobalDrawType(POINT);
+      setGlobalGravityType(REAL_GRAVITY);
+      setGravity(-50);
+
+      setGlobalBounce(-10);
+
+      selectedCubeFace = -1;
+	  selectLocalColorItem(WHITE);
+	  selectLocalParticleItem(0);
+
+
+      speed = 0.5;
+      setEmitterParticles(0,50000);
+
+      rotationKeyboardInputReceived = 1;
 
       break;
 
@@ -1768,7 +1852,7 @@ void initGraphics(int argc, char *argv[]) {
   int globalPresetMenu = glutCreateMenu( selectPreset );
   glutAddMenuEntry("Waterfall", WATERFALL );
   glutAddMenuEntry("Volcano", FIRE_EMITTER );
-  //glutAddMenuEntry("Lines", LINES );
+  glutAddMenuEntry("Snow", SNOW );
   //glutAddMenuEntry("Billboard", BILLBOARD );
 
   // Create a menu
