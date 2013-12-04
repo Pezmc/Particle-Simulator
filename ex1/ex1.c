@@ -168,6 +168,10 @@ typedef struct {
 
   GLfloat r, g, b; // color
 
+  // Target color at particleLifetime
+  int endColor;
+  GLfloat endR, endG, endB;
+
   GLfloat yawAngle; // rotation around Y
 
   Vector spawnVelocity;
@@ -876,6 +880,15 @@ void handleMovement(Particle *particle, float deltaTimeSpeed) {
 	}
 }
 
+void calculateParticleColor(Particle *particle, SurfaceEmitter *emitter) {
+
+	float progress = (particle->lifeTime/emitter->particleLifeTime);
+
+	particle->r = emitter->r - (emitter->r - emitter->endR) * progress;
+	particle->g = emitter->g - (emitter->g - emitter->endG) * progress;
+	particle->b = emitter->b - (emitter->b - emitter->endB) * progress;
+}
+
 /**
  * Calculate each particles position
  */
@@ -893,25 +906,36 @@ void calculateParticle(Particle *particle, SurfaceEmitter *emitter) {
     } else {
       particle->deadTime += deltaTimeSpeed;
       particle->lifeTime += deltaTimeSpeed;
+
+      // If we're changing the color
+      if(emitter->endColor) {
+    	  calculateParticleColor(particle, emitter);
+      }
+
     }
 
   }
   // Particle is alive
   else {
 
-	// Gravity and velocity
-	handleMovement(particle, deltaTimeSpeed);
-
     // If its life is over force a respawn skipping "dead"
     if(particle->lifeTime > emitter->particleLifeTime && randomNumber() > 0.9) {
     	respawnParticle(particle, emitter);
-    }
+    } else {
 
-    // If the floor and ceiling exist
-    if(drawFloor) {
-    	handleCollisions(particle);
-    }
+    	// Gravity and velocity
+    	handleMovement(particle, deltaTimeSpeed);
 
+		// If the floor and ceiling exist
+		if(drawFloor) {
+			handleCollisions(particle);
+		}
+
+	    // If we're changing the color
+	    if(emitter->endColor) {
+		  calculateParticleColor(particle, emitter);
+	    }
+    }
   } // particle alive
 }
 
@@ -1387,6 +1411,10 @@ void createEmitter(int id) {
   emitters[id].yawAngle = 0;
   emitters[id].velocityMultiplier = 1;
   emitters[id].particleLifeTime = 20;
+  emitters[id].endColor = 0;
+  emitters[id].endR = 0;
+  emitters[id].endG = 0;
+  emitters[id].endB = 0;
 
   // Reset all particles
   int i;
@@ -1653,11 +1681,16 @@ void selectPreset(int preset) {
       setGlobalDrawType(LINES);
 
       selectedCubeFace = -1;
-      selectLocalColorItem(RED);
+      selectLocalColorItem(ORANGE);
       selectLocalParticleItem(0);
 
       selectedCubeFace = 5;
       selectLocalParticleItem(100000);
+      emitters[5].particleLifeTime = 5;
+      emitters[5].endColor = 1;
+      emitters[5].endR = 0.6;
+      emitters[5].endG = 0;
+      emitters[5].endB = 0;
 
       emitterYPosition = -11;
 
