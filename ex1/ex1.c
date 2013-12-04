@@ -783,7 +783,7 @@ void calculateParticle(Particle *particle, SurfaceEmitter *emitter) {
 
       //P.Position += P.Position - P.OldPosition + P.Acceleration*Timestep*Timestep;
       particle->position.x += particle->position.x - particle->previousPosition.x;
-      particle->position.y += particle->position.y - particle->previousPosition.y + gravityStrength * deltaTimeSpeed * deltaTimeSpeed;
+      particle->position.y += particle->position.y - particle->previousPosition.y + gravityStrength * 0.001; // Fixed gravity effect
       particle->position.z += particle->position.z - particle->previousPosition.z;
 
       // Store previous position
