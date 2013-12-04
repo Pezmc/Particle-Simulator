@@ -143,7 +143,7 @@ typedef struct {
   float deadTime;
 
   // how alive
-  //char lifeTime;
+  char lifeTime;
 
   // Should we draw it?
   int display;
@@ -152,7 +152,7 @@ typedef struct {
   int firstSpawn;
 
   // Linked list of positions
-  PositionNode *previousPositions;
+  //PositionNode *previousPositions;
 
 } Particle;
 
@@ -1718,7 +1718,7 @@ void initGraphics(int argc, char *argv[]) {
 
   int globalPresetMenu = glutCreateMenu( selectPreset );
   glutAddMenuEntry("Waterfall", WATERFALL );
-  glutAddMenuEntry("Fire Emitter", FIRE_EMITTER );
+  glutAddMenuEntry("Volcano", FIRE_EMITTER );
   //glutAddMenuEntry("Lines", LINES );
   //glutAddMenuEntry("Billboard", BILLBOARD );
 
