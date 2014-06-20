@@ -1,4 +1,4 @@
-COMP37111
+Particle Simulator
 =========
 
-Course work for Graphics
+University of Manchester Final Year Graphics Coursework (COMP37111).
